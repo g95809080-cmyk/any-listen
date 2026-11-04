@@ -1,0 +1,194 @@
+{
+  "tool": "anylisten-migrate",
+  "version": "1.0.0",
+  "generatedAt": "2026-11-02T14:37:09.707Z",
+  "dryRun": false,
+  "node": "v22.22.2",
+  "input": "C:\\Users\\kuma\\WorkBuddy\\Any Listen移植apk\\porting\\.tmp\\baddb",
+  "output": "C:\\Users\\kuma\\WorkBuddy\\Any Listen移植apk\\porting\\.tmp\\t5e",
+  "deviceId": "515f3256-2018-4906-8737-b2fb5aaac0ee",
+  "pathMap": [],
+  "inputScan": null,
+  "probe": {
+    "ok": true,
+    "journalMode": "wal",
+    "dbVersion": "3",
+    "tables": {
+      "metadata": true,
+      "my_list": true,
+      "my_list_music_info": true,
+      "index_my_list_music_info": true,
+      "my_list_music_info_order": true,
+      "index_my_list_music_info_order": true,
+      "music_info_other_source": true,
+      "index_music_info_other_source": true,
+      "play_list_music_info": true,
+      "lyric": true,
+      "music_url": true,
+      "download_list": true,
+      "dislike_list": true,
+      "play_count": true,
+      "log": true
+    },
+    "missing": [],
+    "mismatched": [],
+    "counts": {
+      "my_list": 4,
+      "my_list_music_info": 24,
+      "my_list_music_info_order": 20,
+      "play_list_music_info": 2,
+      "lyric": 3,
+      "music_url": 1,
+      "download_list": 1,
+      "dislike_list": 2,
+      "play_count": 1
+    },
+    "deviceIds": [
+      {
+        "id": "aaaaaaaa-1111-2222-3333-444444444444",
+        "count": 21
+      },
+      {
+        "id": "bbbbbbbb-1111-2222-3333-444444444444",
+        "count": 2
+      }
+    ],
+    "localPathSamples": [
+      "D:\\Music\\华语\\track-000.flac",
+      "D:\\Music\\华语\\track-000.flac",
+      "D:\\Music\\Rock\\track-001.flac"
+    ],
+    "error": null,
+    "probedOnCopy": true
+  },
+  "settings": {
+    "total": 112,
+    "kept": 62,
+    "dropped": 47,
+    "droppedKeys": [
+      "common.windowSizeId",
+      "common.startInFullscreen",
+      "common.transparentWindow",
+      "common.tryAutoUpdate",
+      "common.allowPreRelease",
+      "common.showChangeLog",
+      "common.font",
+      "tray.enable",
+      "tray.isToTray",
+      "tray.themeId",
+      "player.mediaDeviceId",
+      "player.isMediaDeviceChangedPausePlay",
+      "player.isShowTitleLyric",
+      "player.isShowTaskProgess",
+      "desktopLyric.pad.0",
+      "desktopLyric.pad.1",
+      "desktopLyric.pad.2",
+      "desktopLyric.pad.3",
+      "desktopLyric.pad.4",
+      "desktopLyric.pad.5",
+      "desktopLyric.pad.6",
+      "desktopLyric.pad.7",
+      "desktopLyric.pad.8",
+      "desktopLyric.pad.9",
+      "desktopLyric.pad.10",
+      "desktopLyric.pad.11",
+      "desktopLyric.pad.12",
+      "desktopLyric.pad.13",
+      "desktopLyric.pad.14",
+      "desktopLyric.pad.15",
+      "desktopLyric.pad.16",
+      "desktopLyric.pad.17",
+      "desktopLyric.pad.18",
+      "desktopLyric.pad.19",
+      "desktopLyric.pad.20",
+      "desktopLyric.pad.21",
+      "desktopLyric.pad.22",
+      "desktopLyric.pad.23",
+      "desktopLyric.pad.24",
+      "desktopLyric.pad.25",
+      "desktopLyric.pad.26",
+      "desktopLyric.pad.27",
+      "desktopLyric.pad.28",
+      "desktopLyric.pad.29",
+      "desktopLyric.pad.30",
+      "desktopLyric.pad.31",
+      "desktopLyric.pad.32"
+    ],
+    "remapped": [
+      {
+        "key": "download.savePath",
+        "from": "D:\\AnyListen\\download",
+        "to": null,
+        "note": "需在 Android 上重选目录（SAF）"
+      },
+      {
+        "key": "backup.backupPath",
+        "from": "D:\\AnyListen\\backup",
+        "to": null,
+        "note": "需在 Android 上重选目录（SAF）"
+      }
+    ]
+  },
+  "db": {
+    "opened": true,
+    "journalModeBefore": "wal",
+    "journalModeAfter": "delete",
+    "checkpoint": {
+      "busy": 0,
+      "log": 0,
+      "checkpointed": 0
+    },
+    "deviceIdRewritten": 23,
+    "deviceIdSkippedForeign": 2,
+    "foreignDeviceIds": [
+      "bbbbbbbb-1111-2222-3333-444444444444"
+    ],
+    "pathRewritten": 0,
+    "lyricIdRewritten": 0,
+    "dislikeContentRewritten": 0,
+    "musicUrlCleared": 1,
+    "localRowsDropped": 0,
+    "downloadReported": 1,
+    "jsonParseFailures": 0,
+    "collisions": [],
+    "warnings": [
+      "download_list 有 1/1 条记录的 file_path 无法映射到 Android 路径，这些条目在 Android 上会显示为\"文件不存在\"。脚本不删除记录，请自行决定是否在应用内清理。"
+    ],
+    "walBytesBefore": 0,
+    "walBytesAfter": 0,
+    "outSize": 126976
+  },
+  "verify": {
+    "issues": [],
+    "stats": {
+      "journalMode": "delete",
+      "integrity": "ok",
+      "dbVersion": "3",
+      "counts": {
+        "my_list": 4,
+        "my_list_music_info": 24,
+        "my_list_music_info_order": 20,
+        "play_list_music_info": 2,
+        "lyric": 3,
+        "download_list": 1,
+        "play_count": 1
+      },
+      "staleDeviceId": 0,
+      "foreignDeviceIdRows": 2
+    }
+  },
+  "extensions": null,
+  "outputs": [
+    "config.json",
+    "deviceid",
+    "anylisten.data.db（124.0 KB）"
+  ],
+  "warnings": [
+    "原库无法打开，已改用备份：C:\\Users\\kuma\\WorkBuddy\\Any Listen移植apk\\porting\\.tmp\\baddb\\backup\\db_backups\\daily\\anylisten.data.db.20261102-222901089.bak"
+  ],
+  "errors": [],
+  "fatal": false,
+  "fellBackToBackup": "C:\\Users\\kuma\\WorkBuddy\\Any Listen移植apk\\porting\\.tmp\\baddb\\backup\\db_backups\\daily\\anylisten.data.db.20261102-222901089.bak",
+  "sourceDeviceId": null,
+  "deviceIdChanged": true
+}

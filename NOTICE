@@ -1,0 +1,104 @@
+Any Listen for Android — 移植说明与许可声明
+==========================================
+
+本文件回答三个问题：这个仓库是什么、它受什么许可约束、对应源码在哪里。
+许可证全文见仓库根目录 LICENSE（逐字节复制自上游，未做任何编辑）。
+
+
+1. 本仓库是什么
+---------------
+
+上游 Any Listen 的 **Android 移植**，属于上游作品的衍生作品（derivative work）。
+
+上游是一个桌面 / Web 服务端的本地音乐播放器（Electron + Koa + better-sqlite3）。
+本移植为其增加一种新的运行形态：WebView 承载上游的 SPA 与 worker，Kotlin 宿主提供
+文件系统、SQLite、HTTP、音频、通知等平台能力。**不增加上游之外的功能路线**，
+不改动上游的业务语义。
+
+
+2. 上游作品与许可
+-----------------
+
+  名称        any-listen
+  仓库        https://github.com/any-listen/any-listen
+  固定 commit c8f40eab05021735b969e5991e6ec2f2c63e83b8
+  版本标注    0.10.1-beta.2（desktop）/ 0.12.1-beta.2（web-server）
+  许可        GNU Affero General Public License v3.0
+              + "Additional License Terms"（禁止商业使用，见 LICENSE 末尾）
+  版权        归上游作者及 any-listen 贡献者所有
+
+**上游许可不是纯 AGPL v3**。LICENSE 末尾的附加条款原文规定：未经原作者书面许可，
+本软件不得用于任何商业目的；"商业使用"指在营利性业务中使用或提供付费服务；
+任何直接或间接产生收入的使用均被禁止。
+
+本仓库对该许可的态度是**原样传递**（pass-through）：不追加限制，也不减免限制
+（AGPL v3 §10）。这意味着本移植同样不能用于商业目的 —— 这一点不会因为经过移植而改变。
+
+
+3. 移植层的许可状态
+-------------------
+
+`porting/` 下的全部源码（Kotlin 宿主、JS 适配层、UI 覆写、构建脚本、资源）是上述
+上游作品的衍生，因此**同样受第 2 节的许可约束**。作为下游，本仓库无权授予比上游
+更多的权利，也无权替上游减免限制。
+
+仓库内不含任何独立于上游许可的授权声明；若发现与之冲突的表述，以 LICENSE 为准。
+
+
+4. AGPL v3 §5 要求的修改声明
+----------------------------
+
+上游源码 **零改动**：`porting/` 之外的 `source/` 目录在构建前后 `git status --porcelain`
+均为空（HEAD 固定在上述 commit）。上游文件只在构建期被读取、编译进 bundle，不被写回。
+
+所有改动集中在 `porting/`，通过两种机制生效：
+
+  (a) **构建期模块覆写**：`porting/js/vite.config.mjs` 的三张映射表（`OVERRIDES` /
+      `RAW_TARGETS` / `NODE_SHIMS`）把上游模块解析到 `porting/js/` 下的等价实现，
+      或强制指回上游原文件。典型替换：`node:http` → HttpPort、
+      `chokidar` → FileSystemPort.watch、`better-sqlite3` → sql.js(WASM)、
+      `node:vm` → QuickJS(WASM)。覆写清单与逐条理由见 README。
+  (b) **新增文件**：四个 Gradle 模块（`app` / `bridge` / `core-ports` / `webassets`，
+      共 32 个 `.kt`）、JS 侧 Node 内置模块垫片（`porting/js/shims/`）、
+      Android 运行时装配（`porting/js/ui/boot/`：返回键、安全区、弹层关闭）。
+
+修改日期：2026-11。
+
+被修改的范围是可以逐文件核对的 —— 仓库内除 `source/` 外的所有文件都属于移植层。
+
+
+5. 对应源码（Corresponding Source）
+-----------------------------------
+
+按 AGPL v3 的定义，对应源码 = 生成该二进制所需的全部源码，含构建脚本与安装信息。
+
+  移植层   本仓库即完整对应源码，含 `porting/js`、`porting/android` 与全部构建脚本。
+  上游     按第 2 节的仓库地址与 commit 取得，检出到与本仓库**同级**的 `source/` 目录：
+               git clone https://github.com/any-listen/any-listen.git source
+               git -C source checkout c8f40eab05021735b969e5991e6ec2f2c63e83b8
+
+           位置不是随意的：`porting/js/vite.config.mjs` 以 `../../source` 解析上游，
+           换位置必须同步改构建配置。
+
+从零重建的完整步骤（含工具链版本与已验证/未验证的边界）见 `docs/BUILD-from-source.md`。
+
+
+6. 商业使用
+-----------
+
+禁止。商用需取得上游作者书面授权（合规条件 C-4），且**不得**援引 AGPL v3 §7
+"可移除进一步限制"来自行豁免 —— 该条针对的是下游追加的限制，不是上游原始授权。
+
+
+7. 第三方组件
+-------------
+
+本移植引入的第三方组件（Apache-2.0 的 Android 依赖、JS bundle 内的各 npm 包等）
+及其许可，逐项列在 `docs/phase6-compliance.md` §2.2。
+
+其中两处**许可选举**已确定，随包分发时必须写入 NOTICE：
+  node-forge  → BSD-3-Clause（而非 GPL-2.0）
+  dompurify   → Apache-2.0（而非 MPL-2.0）
+
+⚠️ 独立的 `THIRD-PARTY-NOTICES` 文件**尚未生成**（合规条件 C-3 未闭环）。
+在补齐之前，本仓库不具备"随包分发"的完整许可材料。

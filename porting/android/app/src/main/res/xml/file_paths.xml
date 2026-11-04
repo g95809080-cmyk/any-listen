@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 分享日志/备份/导出的音频文件；不放 filesDir 根，避免把数据库暴露给 FileProvider -->
+    <files-path name="logs" path="logs/" />
+    <files-path name="exports" path="exports/" />
+    <cache-path name="cache" path="." />
+    <external-path name="external" path="." />
+</paths>

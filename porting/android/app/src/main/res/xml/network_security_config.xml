@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  默认（严格）网络安全配置。
+
+  只有回环地址允许明文：
+  - WebView 与 `fetch` 都从 http://127.0.0.1:17930 取 SPA/接口，这是同源前提；
+  - `AudioWorklet` / `AudioContext` 的 `createMediaElementSource` 要求**安全上下文**，
+    `file://` 与 `asset://` 都不满足，只有 `localhost` / `127.0.0.1` 算 secure context。
+
+  其余域名一律禁止明文：在线音源、插件源、封面都必须走 https。
+  如果用户确实需要 http 音源（自建服务、老 WebDAV），两条路：
+  1. 在下面加一条 `<domain-config cleartextTrafficPermitted="true">` 把**具体域名**放进去
+     （不要 includeSubdomains，也不要写通配）；
+  2. 快速验证用 `-PallowCleartext=true` 构建，会切到 `network_security_config_loose.xml`
+     （全放行，仅用于临时排查，**不要提交 release**）。
+
+  ⚠️ 这条策略对 OkHttp 同样生效（`NetworkSecurityPolicy` 在连接前检查），
+  所以「原生代发 http 音源」也会被拦，不是只影响 WebView。
+-->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system" />
+    </trust-anchors>
+  </base-config>
+
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">127.0.0.1</domain>
+    <domain includeSubdomains="false">localhost</domain>
+  </domain-config>
+</network-security-config>

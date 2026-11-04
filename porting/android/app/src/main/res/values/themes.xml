@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      用平台主题（不引 AppCompat）：本 App 只有一个全屏 WebView，UI 全在 Web 侧，
+      引 AppCompat 只会多 1.5MB dex 与一套无关的兼容层。
+    -->
+    <style name="Theme.AnyListen" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#101014</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <!-- 内容延伸到刘海区：页面用 env(safe-area-inset-*) 自行避让 -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

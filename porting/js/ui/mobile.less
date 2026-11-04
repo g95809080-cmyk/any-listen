@@ -1,0 +1,993 @@
+/* ============================================================================
+ * Any Listen Android — 移动端全局覆盖表（N-0）
+ *
+ * 来源：docs/phase3-uiux-impl-spec.md §1（柯悦屏），**逐行照抄不改**，改动须回退 uiux。
+ *
+ * 三条铁律：
+ * 1. 所有选择器必须以 `html.mobile` 开头 —— Svelte scoped CSS 编译后特异性是 0,2,0，
+ *    裸类选择器（0,1,0）赢不了，`html.mobile .x`（0,2,1）必赢，不用 `!important`。
+ * 2. `html.mobile` 前缀会让 px **保持 px**（上游 pxtorem 的 selectorBlackList 含 'html'），
+ *    所以这里 1px == 1dp，与 `html{font-size}` / 用户字号倍率完全解耦。
+ * 3. `!important` 只用在"目标是 JS 写在元素上的 inline style"的场合（menu/popup 的
+ *    left/top/transform/opacity、slider 的 width）—— 这类没有别的办法。
+ * ========================================================================== */
+
+/* ---------- 0. 设计令牌（phase3-uiux.md §3.1）---------- */
+html.mobile {
+  --touch-min: 44px;          /* 最小命中区（硬底线） */
+  --touch-comfort: 48px;      /* 常规图标按钮 */
+  --touch-primary: 56px;      /* 主按钮 */
+  --touch-play: 72px;         /* 播放页主播放键 */
+  --gap-min: 8px;             /* 相邻可点元素最小间距（硬底线） */
+  --gap-group: 16px;
+  --page-pad-x: 16px;
+  --row-music: 72px;          /* 与 List/index.svelte 的 useListItemHeight(4.5) 一致 */
+  --row-list: 72px;
+  --row-menu: 56px;
+  --row-setting: 56px;
+  --appbar-h: 56px;
+  --tabbar-h: 56px;
+  --miniplayer-h: 60px;
+  --sheet-radius: 16px;
+  --sheet-max-h: 60dvh;
+  /*
+   * 安全区：**不能只靠 `env(safe-area-inset-*)`**。
+   * 实测 Android WebView 133（模拟器 API 36，三键导航）只上报了 top≈48px，
+   * bottom 恒为 0 —— 于是 `--tabbar-h` 那 56px 有 48px 压在系统导航栏半透明遮罩下面，
+   * 标签整体发灰、点击区被手势条吃掉。所以原生侧（MainActivity）会把真实的
+   * systemBars+displayCutout insets 以 CSS px 注入成 `--inset-top` / `--inset-bottom`，
+   * 这里取两者的较大值：有 env 无原生、或有原生无 env 都成立，且不会重复叠加。
+   */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--inset-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--inset-bottom, 0px));
+  --dur-tap: 100ms;
+  --dur-sheet: 240ms;
+}
+
+/* ---------- 1. 视口 / 安全区 / 外壳（B-01 B-17）---------- */
+html.mobile {
+  height: 100dvh;
+  min-width: 0;              /* 干掉 app.less:71 的 min-width:650px（B-01） */
+  min-height: 0;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+@supports not (height: 100dvh) {
+  html.mobile {
+    height: 100vh;
+  }
+}
+html.mobile body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;  /* 禁掉橡皮筋，避免与自定义滚动打架 */
+  touch-action: manipulation; /* 去掉双击缩放 300ms 延迟 */
+}
+html.mobile #root {
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;           /* app.less 的窗口阴影在手机上无意义 */
+}
+/* #root::before 是桌面毛玻璃层（app.less:109-121），手机上关掉省一次全屏合成 */
+html.mobile #root::before {
+  display: none;
+}
+/* 桌面窗口拖拽区（B-18） */
+html.mobile .drag,
+html.mobile .drag-no-modal,
+html.mobile .drag-no-any-modal {
+  -webkit-app-region: no-drag;
+}
+
+/* ---------- 2. 触控目标放大（B-11 B-13 B-14）---------- */
+/* Btn.icon：32dp → 44dp（视觉 svg 仍 24dp，靠 padding 撑命中区） */
+html.mobile .btn.icon {
+  width: var(--touch-min) !important;
+  height: var(--touch-min) !important;
+  padding: 10px !important;
+}
+html.mobile .btn.icon.min {
+  width: var(--touch-min) !important;
+  height: var(--touch-min) !important;
+  padding: 12px !important;
+}
+/* Btn.min（无 icon）：行高 19dp → 44dp */
+html.mobile .btn.min {
+  min-height: var(--touch-min) !important;
+  padding: 0 16px !important;
+  font-size: 13px !important;
+}
+html.mobile .btn.middle {
+  min-height: var(--touch-min) !important;
+  font-size: 13px !important;
+}
+/* 所有裸 button 兜底（含 PopupBtn / Modal 关闭 / PlayDetail 控制键） */
+html.mobile .btn,
+html.mobile button.btn {
+  min-height: var(--touch-min);
+}
+
+/* Checkbox：14dp → 20dp 视觉，整行可点由父级行高保证（B-13） */
+html.mobile .checkbox {
+  font-size: 15px !important;
+}
+html.mobile .checkbox .container {
+  width: 20px !important;
+  height: 20px !important;
+}
+html.mobile .checkbox .content {
+  min-height: var(--touch-min);
+}
+html.mobile .checkbox .label {
+  line-height: 1.35;
+}
+
+/* Modal 头部：18dp → 56dp，关闭按钮 44dp（B-14） */
+html.mobile .modal {
+  align-items: flex-end;          /* 底部对齐 */
+}
+html.mobile .modal .content {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  max-height: 88dvh !important;
+  min-height: 0 !important;
+  border-radius: var(--sheet-radius) var(--sheet-radius) 0 0 !important;
+}
+html.mobile .modal .header {
+  height: 56px !important;
+  padding: 0 8px 0 20px;
+}
+html.mobile .modal .header h3 {
+  font-size: 16px !important;
+}
+html.mobile .modal .header button {
+  width: var(--touch-min) !important;
+  height: var(--touch-min) !important;
+  padding: 0 !important;
+}
+html.mobile .modal .header button svg {
+  height: 16px !important;
+}
+
+/* 分页：每页按钮 44dp */
+html.mobile .pagination button,
+html.mobile .pagination .btn {
+  min-width: var(--touch-min) !important;
+  min-height: var(--touch-min) !important;
+}
+
+/* ---------- 3. 弹层 → BottomSheet（B-10）---------- */
+/* 覆盖 34 处右键菜单（base/Menu）+ 全部 Dropdown + hover 弹层（base/Popup）
+   这些元素的 left/top/transform/opacity 都是 JS 写在 inline style 上的 → 必须 !important */
+html.mobile .menu,
+html.mobile .popup {
+  position: fixed !important;
+  top: auto !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: auto !important;
+  max-width: none !important;
+  max-height: var(--sheet-max-h) !important;
+  margin: 0 !important;
+  padding: 8px 0 max(8px, var(--safe-bottom)) !important;
+  overflow-y: auto !important;
+  pointer-events: auto !important;
+  border-radius: var(--sheet-radius) var(--sheet-radius) 0 0 !important;
+  box-shadow: 0 -2px 16px rgb(0 0 0 / 18%) !important;
+  opacity: 1 !important;
+  filter: none !important;
+  transform: none !important;
+  z-index: 20 !important;
+}
+/* scrim：fixed 子元素 + 负 z-index 覆盖整个视口 */
+html.mobile .menu::before,
+html.mobile .popup::before {
+  content: '' !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: -1 !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  border: 0 !important;
+  background: rgb(0 0 0 / 40%) !important;
+  backdrop-filter: none !important;
+}
+/* 关闭态必须真正移出布局 —— D-22「弹层只能开不能关」的真凶就在这里。
+   上游 `.popup` / `.menu` 卸载 DOM 的路径只有 `ontransitionend` → `render = false`，
+   而本文件用 `opacity: 1 !important` + `transform: none !important` 把过渡两端钉成同一个值
+   → 过渡根本不会发生 → `transitionend` 永不触发 → `render` 恒为 true
+   → 元素留在 DOM 里，且因 `pointer-events: auto !important` 继续命中整个视口。
+   （实测：派发 `mouseleave` 后 class 已从 `popup top active` 变成 `popup top`、`inert` 已加上，
+    协议上"已经关了"，但 opacity 仍是 1、rect 仍非 0 —— 状态对了、像素没变。）
+   这里按组件自己的关闭信号 `[inert]`（`anim === false` 时由 Svelte 添加）直接 `display:none`：
+   与状态同步、不依赖任何过渡，重开时 `inert` 移除即恢复。 */
+html.mobile .popup[inert],
+html.mobile .menu[inert] {
+  display: none !important;
+}
+/* 菜单项 34px → 56dp */
+html.mobile .menu .menu-item,
+html.mobile .popup .menu-item {
+  min-width: 0 !important;
+  min-height: var(--row-menu) !important;
+  padding: 0 24px !important;
+  font-size: 15px !important;
+  line-height: var(--row-menu) !important;
+  text-align: left;
+}
+html.mobile .menu .hr {
+  margin: 4px 0;
+}
+/* Popup 内容区：去掉 10px padding；宽度撑满抽屉。
+   不加 `width:100%` 时它是 `.popup`（flex 容器）的行内 flex 项，宽度收缩到内容宽度
+   → 抽屉背景是整条、内容只占左边一小块，而且 D-22 判"点内部/外部"用的是
+   `.popup-content` 的 rect，内容区偏窄会把抽屉右半边的空白误判成"点外面"。 */
+html.mobile .popup .popup-content {
+  width: 100% !important;
+  padding: 0 !important;
+}
+/* 播放队列（PlaylistBtn 内 .container 是 500px 宽，B-04） */
+html.mobile .popup .container {
+  width: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+/* 音量/倍速 弹层内的滑块占满 */
+html.mobile .popup .setting {
+  width: 100% !important;
+  padding: 8px 20px !important;
+}
+/* D-24：循环模式浮层 5 个选项实测 24×44（宽 < 44dp）。只命中 `.popup .setting > .btn`
+   —— 倍速/音量的 `.setting` 子元素是 `.info`/`SliderBar`，不误伤；5×44+4×10=260dp < 412dp
+   视口，不用换行；`.popup` 在 §3 已 fixed 铺满底边，inline left/top 全被 !important 压掉，
+   所以撑宽按钮不会影响 Popup 的定位计算。svg 单独钳住，避免命中区变大后图标跟着放大。 */
+html.mobile .popup .setting > .btn {
+  flex: 0 0 auto !important;
+  width: var(--touch-min) !important;
+  height: var(--touch-min) !important;
+}
+html.mobile .popup .setting > .btn > svg {
+  max-width: 28px;
+  max-height: 28px;
+}
+/* 歌词操作面板（LyricMenu，class="container" 且 Portal 到 #root） */
+html.mobile #root > .container {
+  position: fixed !important;
+  top: auto !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: auto !important;
+  max-height: 50dvh;
+  padding: 12px 20px calc(12px + var(--safe-bottom)) !important;
+  overflow-y: auto;
+  border-radius: var(--sheet-radius) var(--sheet-radius) 0 0 !important;
+  opacity: 1 !important;
+  transform: none !important;
+  z-index: 20 !important;
+}
+
+/* ---------- 4. 歌曲列表：4 列 → 双行卡片（B-03）---------- */
+/* ListItem 的 5 个子元素是同级 flex 子项：
+   1=.pic  2=.name-cell  3=singer  4=album  5=time
+   → 父容器切 grid 即可视觉重排，不动 DOM。
+   行高由 VirtualizedList 的 inline height 控制（72px），此处不设 height。 */
+html.mobile .my-list .container {
+  display: grid !important;
+  grid-template-areas:
+    'pic name side'
+    'pic singer side';
+  grid-template-rows: auto auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: center;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+}
+html.mobile .my-list .container > .pic {
+  grid-area: pic;
+  width: 48px !important;
+  height: 48px !important;
+}
+html.mobile .my-list .container > .name-cell {
+  grid-area: name;
+  min-width: 0;
+}
+html.mobile .my-list .container > .name-cell .name {
+  font-size: 15px !important;
+  line-height: 1.3;
+}
+html.mobile .my-list .container > .name-cell .label {
+  gap: 6px;
+}
+html.mobile .my-list .container > .name-cell .label .badge {
+  font-size: 10px;
+}
+html.mobile .my-list .container > :nth-child(3) {
+  grid-area: singer;
+  font-size: 12px !important;
+  line-height: 1.3;
+  opacity: 0.66;
+}
+html.mobile .my-list .container > :nth-child(4) {
+  display: none !important;   /* 专辑列隐藏 */
+}
+html.mobile .my-list .container > :nth-child(5) {
+  grid-area: side;
+  font-size: 11px !important;
+  opacity: 0.6;
+}
+/* 行内按钮常显（不再 hover 显形，B-03 副产物） */
+html.mobile .my-list .container .name-right {
+  margin: 0 0 0 8px;
+  opacity: 1 !important;
+}
+html.mobile .my-list .container .name-right .auto-hide-btns {
+  display: flex !important;
+}
+/* 表头整体隐藏（B-03） */
+html.mobile .my-list > .header,
+html.mobile .my-list .header {
+  display: none !important;
+}
+
+/* 列表信息头（封面 140dp → 96dp，B-03） */
+html.mobile .view-container > .header {
+  padding: 12px 16px !important;
+}
+html.mobile .view-container > .header .left {
+  width: 96px !important;
+  height: 96px !important;
+}
+html.mobile .view-container > .header .title {
+  font-size: 18px !important;
+}
+html.mobile .view-container > .header .control-btns {
+  gap: 8px;
+  margin-top: 10px !important;
+}
+
+/* ---------- 5. 播放详情：50/50 → 纵向（B-05 B-16）---------- */
+html.mobile .play-detail {
+  border-radius: 0 !important;
+}
+html.mobile .player-detail-main {
+  flex-direction: column !important;
+}
+html.mobile .left-info {
+  flex: none !important;
+  width: 100% !important;
+  padding: 8px 24px 0 !important;
+  --content-width: 62%;
+}
+html.mobile .left-info > :first-child {
+  max-height: 38dvh;   /* 封面区 */
+}
+html.mobile .right-lyric {
+  flex: auto !important;
+  min-height: 0;
+}
+html.mobile .play-detail .footer {
+  height: auto !important;
+  padding-bottom: calc(12px + var(--safe-bottom));
+}
+html.mobile .play-detail .footer-content {
+  padding: 0 16px !important;
+}
+/* footer 顶部控制行：3 组横排 → 分两行（主控居中在上、两侧辅控在下） */
+html.mobile .play-detail .footer .control {
+  flex-wrap: wrap;
+}
+html.mobile .play-detail .footer .side {
+  flex: 1 1 40%;
+}
+/* 播放详情顶栏控制键（关闭/全屏）→ 44dp，隐藏全屏键 */
+html.mobile .play-detail .control-btn button {
+  width: var(--touch-min) !important;
+  height: var(--touch-min) !important;
+}
+html.mobile .play-detail .control-btn button.fullscreen {
+  display: none !important;
+}
+
+/* ---------- 6. 进度条 / 滑块：5px → 44dp 触控带（B-12）---------- */
+/* PlayerProgressBar：轨道保持细，命中区靠 ::before 撑高 */
+html.mobile .progress {
+  height: 6px !important;
+  overflow: visible !important;
+}
+html.mobile .progress-mask {
+  top: 50% !important;
+  height: var(--touch-min) !important;
+  transform: translateY(-50%);
+}
+/* thumb：无 thumb 的进度条加一个（拖动时可见） */
+html.mobile .progress-mask::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: calc(var(--p, 0) * 100%);
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  background: var(--color-button-font, #fff);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+  opacity: 0;
+  transition: opacity 200ms;
+}
+html.mobile .progress-mask.show-thumb::after {
+  opacity: 1;
+}
+/* SliderBar（音量/音效）：100px → 屏宽-64，命中区 44dp */
+html.mobile .slider {
+  flex: auto;
+  width: auto !important;
+  padding: 19px 0 !important;
+  opacity: 1 !important;
+}
+html.mobile .slider .slider-content {
+  height: 6px !important;
+  overflow: visible;
+  border-radius: 6px;
+}
+html.mobile .slider .slider-bar {
+  border-radius: 6px;
+}
+html.mobile .slider .slider-mask {
+  height: 100% !important;
+}
+html.mobile .slider .slider-mask::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: calc(var(--p, 0) * 100%);
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  background: var(--color-button-font, #fff);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+}
+
+/* ---------- 7. Tab：30dp → 44dp + 横滚（B-09 B-08）---------- */
+html.mobile .header {
+  gap: 8px;
+  padding: 0 16px !important;
+}
+html.mobile .header > .list {
+  flex: auto;
+  gap: var(--gap-min) !important;
+  overflow-x: auto;
+  font-size: 14px !important;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+html.mobile .header > .list::-webkit-scrollbar {
+  display: none;
+}
+html.mobile .header > .list .list-item {
+  min-height: var(--touch-min);
+  scroll-snap-align: start;
+}
+html.mobile .header > .list .list-item .label {
+  min-height: var(--touch-min);
+  padding: 0 2px !important;
+}
+
+/* ---------- 8. 卡片网格：300px → 150px（2 列）---------- */
+/* 只对 display:grid 的元素生效，非 grid 的 ul 完全不受影响 → 可安全放宽选择器 */
+html.mobile ul {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+  gap: 12px !important;
+  padding: 0 16px 16px !important;
+}
+
+/* ---------- 9. 设置页：两栏 → 左栏横滚 chip 条（B-07）---------- */
+/* ⚠️ 容器方向必须一起改。上游 `.settings-app-container` 是 `display:flex` 的**横向**两栏
+   （左导航 + 右内容）。把左导航改成横滚 chip 条之后，如果容器仍是 row：
+   16 个 chip 横排把容器撑到 **1793px**（实测），右内容区被推到 x=1793、`clientWidth: 0`
+   —— 整页只剩一条导航，下面全空白，所有设置项都点不到。
+   §9.1 给扩展设置的 `.settings-extension-container` 做了这一步，一级容器漏了。 */
+html.mobile .settings-app-container {
+  flex-flow: column nowrap !important;
+  height: 100% !important;
+  min-height: 0 !important;
+}
+html.mobile .settings-app-list {
+  flex: none;
+  /* ⚠️ 这里**不能**写 `width: auto`（D-11 的根因）。
+   *
+   * `.list` 是 `.settings-app-list` 的唯一子元素，横滑条由它承担（`overflow-x: auto`）。
+   * `width: auto` 让 `.settings-app-list` 按**内容**撑开 —— 16 个 chip 把它撑到实测
+   * **1793.12px**，于是 `.list` 自己的 `scrollWidth == clientWidth == 1793`
+   * （它不溢出，`overflow-x:auto` 形同虚设），而真正裁剪的是外层 `.content`
+   * （`overflow-x: hidden`）→ 后 10 项永久不可达，真实滑动 14 步 `scrollLeft` 恒为 0。
+   *
+   * 必须是 `100%`：等于父级（`.settings-app-container` 412dp）宽，让 `.list` 成为
+   * 真正溢出 1793 的滚动容器。`min-width: 0` 顺带解掉 flex 子项的 auto 最小尺寸
+   * （默认 min-width:auto 会让它拒绝收缩到内容宽度以下）。 */
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 0 12px !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border-radius: 0;
+}
+html.mobile .settings-app-list .list {
+  display: flex !important;
+  flex-flow: row nowrap !important;
+  gap: var(--gap-min);
+  height: auto !important;
+  padding: 0 16px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+html.mobile .settings-app-list .list::-webkit-scrollbar {
+  display: none;
+}
+html.mobile .settings-app-list .list-item {
+  flex: none !important;
+  height: var(--touch-min) !important;
+  padding: 0 14px !important;
+  font-size: 13px !important;
+  line-height: var(--touch-min) !important;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  background-color: var(--color-primary-light-300-alpha-900) !important;
+  border-radius: 22px !important;
+}
+html.mobile .settings-app-list .list-item.active {
+  font-weight: 600;
+  background-color: var(--color-primary-alpha-300) !important;
+}
+html.mobile .settings-app-list .list-item > svg {
+  display: none !important;
+}
+/* 设置行 36px → 56dp */
+html.mobile .settings-list {
+  margin: 0 !important;
+  padding: 0 16px 32px !important;
+}
+html.mobile .settings-item {
+  padding: 0 !important;
+}
+html.mobile .settings-item + .settings-item {
+  margin-top: 0;
+}
+html.mobile .settings-title {
+  margin: 16px 0 8px !important;
+  font-size: 16px !important;
+}
+html.mobile .settings-item-checkbox,
+html.mobile .settings-item-radio,
+html.mobile .settings-item-input {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--row-setting);
+}
+
+/* ---------- 9.1 扩展设置二级导航：18% → 横向 chip 条 ---------- */
+/* 上游 `ExtenstionList.svelte` 的 `.settings-extension-list { width: 18%; max-width: 200px }`：
+   桌面 1020px 下 183px 够用，**411dp 下只有 74px** —— 实测被挤成一列单字（"WebDAV" 竖排），
+   二级导航完全不可读。与一级导航（§9）统一处理：整条横滑、44dp 药丸。 */
+html.mobile .settings-extension-container {
+  flex-flow: column nowrap !important;
+  padding-top: 0 !important;
+}
+html.mobile .settings-extension-list {
+  flex: none;
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 0 12px !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border-radius: 0;
+}
+html.mobile .settings-extension-list .list {
+  display: flex !important;
+  flex-flow: row nowrap !important;
+  gap: var(--gap-min);
+  height: auto !important;
+  padding: 0 16px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+html.mobile .settings-extension-list .list::-webkit-scrollbar {
+  display: none;
+}
+html.mobile .settings-extension-list .list-item {
+  flex: none !important;
+  height: var(--touch-min) !important;
+  padding: 0 14px !important;
+  font-size: 13px !important;
+  line-height: var(--touch-min) !important;
+  white-space: nowrap;
+  background-color: var(--color-primary-light-300-alpha-900) !important;
+  border-radius: 22px !important;
+}
+html.mobile .settings-extension-list .list-item.active {
+  font-weight: 600;
+  background-color: var(--color-primary-alpha-300) !important;
+}
+
+/* ---------- 9.2 曲库表头：桌面五列 → 移动端隐藏 ---------- */
+/* 行已重排成「封面 + 双行」卡片（§4），表头仍是 `# / Song name / Artist / Album name / Duration`
+   五列，列宽与卡片对不上，只剩视觉噪音（实测表头 y=284 h=36 横在卡片上方）。
+   用 `:has(> span)` 精确命中「直接子元素是 span 列」的表头，
+   不会误伤设置页的 `.header`（其直接子是 `.list`）。 */
+html.mobile .view-container > .header:has(> span) {
+  display: none !important;
+}
+
+/* ---------- 10. 通知（Toast → Snackbar）---------- */
+html.mobile .notify-container {
+  bottom: calc(var(--tabbar-h) + var(--miniplayer-h) + 16px) !important;
+}
+html.mobile .notify-item {
+  width: calc(100vw - 32px) !important;
+  min-width: 0 !important;
+  margin: 0 16px !important;
+}
+
+/* ---------- 11. hover 语义修正 ---------- */
+/* 触摸设备上 :hover 会在 tap 后一直保留（下一次触摸才清），上游大量 `:hover` 改背景/透明度，
+   于是出现「点完留一块灰」的假象。
+ *
+ * ⚠️ 这里**不能用 `revert-layer`**（2026-11-03 实测踩到，即 QA 报告 D-14 的真正来源）：
+ * `revert-layer` 在没有声明任何 `@layer` 的情况下等价于 `revert` —— 会一路回退到**用户代理**
+ * 样式表，而 UA 给 `<button>` 的 `background-color` 是 `buttonface`；本页面的 color-scheme
+ * 落到深色时 buttonface = **rgb(107, 107, 107)**，也就是截图里那块死灰块（播放页主播放键、
+ * 设置页头部 tab 都有）。而且它**不是**来自任何一个 `--color-*` 变量，用主题排查会毫无头绪。
+ *
+ * 改为显式的 `transparent` / `1`：绝大多数 `.btn`（图标键、播放控制键）本身底色就是
+ * transparent，还原后与未 hover 完全一致。代价：极少数「填充款」按钮（如红心已收藏态）在
+ * 粘滞 hover 期间会短暂显示为透明底，下一次触摸即恢复 —— 比留一块 rgb(107,107,107) 好得多。
+ * 根治要靠给上游 `:hover` 加 `@media (hover: hover)` 守卫，那属于 `source/` 改动，不允许。 */
+@media (pointer: coarse) {
+  html.mobile .btn:hover,
+  html.mobile .menu .menu-item:hover,
+  html.mobile .nav-item .link:hover,
+  html.mobile .list-item:hover {
+    background-color: transparent;
+    opacity: 1;
+  }
+}
+
+/* ---------- 12. 自定义滚动条不参与触摸 ---------- */
+html.mobile .custom-scrollbar {
+  display: none !important;
+}
+html.mobile * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- 13. 移动端外壳（N-2 补充：桌面行宽/层级约束）---------- */
+/* 上游 `#app-main` 是 Aside + #app-right 横排；MobileAppShell 不用这套，
+   这里只兜住"万一还有残留引用"的情况，避免 650px 的 min-width 把布局撑破 */
+html.mobile #app-main,
+html.mobile #app-right {
+  min-width: 0 !important;
+}
+
+/* 长按多选态：底部操作条（O-1 的 .mobile-select-bar，见 ui/overrides/.../List/index.svelte） */
+html.mobile .mobile-select-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  gap: var(--gap-min);
+  align-items: center;
+  min-height: 56px;
+  padding: 6px 12px calc(6px + var(--safe-bottom));
+  background-color: var(--color-main-background);
+  border-top: 1px solid var(--color-primary-light-400-alpha-800);
+}
+html.mobile .mobile-select-bar .count {
+  flex: auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--color-font-label);
+}
+
+/* ---------- 14. 文件浏览器弹窗（view-main/material/fileExplorerModal/FileListModal）----------
+ *
+ * 命中方式：`.modal > .content` 里的 `.header` 带 `.input`。
+ * 全仓只有 FileListModal 的 header 里有 Input（Open/Save 共用这一个组件）；其它 Modal 的
+ * header 只有 h3 + 关闭键，`.menu/.popup` 也不是 `.modal > .content` 结构 —— 不会误伤，
+ * 因此上面第 3 节对 34 处右键菜单/下拉的 BottomSheet 化完全不受影响。
+ * 用 :has() 而不是给上游加类名，是为了让 `source/` 保持零改动。
+ *
+ * 为什么必须单独一组规则（412×915dp、inset-top/bottom=48px 实测）：
+ * - 上游 `.header h2 { word-break: break-all }` → min-content 宽度只有 1 个字符；
+ *   header 又是单行 flex（h2 + 3×44dp 图标键 + Input），4 个按钮 + gap 已吃掉 240dp，
+ *   flex 收缩把 h2 压成 **8.3px 宽 × 218.4px 高**（逐字竖排，且 because align-items:center
+ *   上下溢出 56px 的 header，盖到曲库空态上）。→ 必须把 header 改两行栅格，让标题独占一行。
+ * - 上游 `.main :global(.list) { min-width: 460px }` 是给桌面 65% 宽弹窗写的，
+ *   412dp 上每行右侧多出 460-382=78px 被 `.main{overflow:hidden}` 裁掉。
+ * - `.footer` 没有底部安全区内边距，实测 bottom=900 而可视区下界是 915-48=867 → 被导航栏压住。
+ * -------------------------------------------------------------------------------------- */
+html.mobile .modal > .content:has(> .header > .input) {
+  box-sizing: border-box !important;
+  height: 90dvh !important;
+  /* 与 height 取小：90dvh 与「屏高 - 状态栏 - 8」谁小用谁 */
+  max-height: calc(100dvh - var(--safe-top) - 8px) !important;
+  padding: 0 !important;
+
+  > .header {
+    display: grid !important;
+    flex: none !important;
+    grid-template-areas:
+      'title title title title'
+      'home back input reset';
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    gap: 8px !important;
+    align-items: center;
+    height: auto !important;
+    padding: 12px 12px 8px !important;
+  }
+
+  /* 标题独占整行：不再与工具条抢宽度，禁止逐字换行 */
+  > .header > h2 {
+    flex: none !important;
+    grid-area: title;
+    min-width: 0 !important;
+    overflow: hidden;
+    font-size: 16px !important;
+    line-height: 20px !important;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    word-break: normal !important;
+  }
+
+  /* 上游把 3 个图标键拼成「分段控件」（首键 margin-left:15px、相邻 border-left、圆角归零），
+     铺成栅格后必须拆掉，否则会看到断裂的竖线和错位 */
+  > .header > button {
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 8px !important;
+  }
+  > .header > button:nth-of-type(1) {
+    grid-area: home;
+  }
+  > .header > button:nth-of-type(2) {
+    grid-area: back;
+  }
+  > .header > button:nth-of-type(3) {
+    grid-area: reset;
+  }
+  > .header > .input {
+    grid-area: input;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 44px !important;
+    padding: 0 10px !important;
+    font-size: 13px !important;
+  }
+
+  /* 列表区独立滚动 */
+  > .main {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 12px !important;
+    overflow: hidden;
+  }
+  > .main > .list {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+  }
+
+  /* footer 吃底部安全区 → 三个按钮完整落在导航栏上沿 */
+  > .footer {
+    flex: none !important;
+    gap: 8px !important;
+    margin: 8px 12px 0 !important;
+    padding: 8px 0 max(8px, var(--safe-bottom)) !important;
+    border-top: 1px solid var(--color-primary-light-400-alpha-800);
+  }
+  > .footer .left {
+    min-width: 0 !important;
+  }
+  > .footer .left .tip {
+    min-width: 0;
+    font-size: 12px;
+  }
+  > .footer .right {
+    flex: none !important;
+    gap: 8px !important;
+  }
+}
+
+/* ---------- 15. 播放详情页：桌面纵向尺寸 → 412×915 竖屏重排（D-10）----------
+ *
+ * 两条**独立**根因，必须一起修（QA §5 D-10）：
+ *
+ * ① 运行时异常（整页白屏的直接原因）
+ *    上游 `components/layout/PlayDetail/Header.svelte` 的顶栏只在 `{#if VITE_IS_DESKTOP}` /
+ *    `{#if VITE_IS_WEB}` 里渲染。本构建两者**都是 false**（vite.config.mjs 的 define 段），
+ *    于是 `bind:this={domBtns}` 永远不会被赋值，而 `onMount` 里第 36 行
+ *    `domBtns!.addEventListener(...)` 直接抛
+ *    `Uncaught TypeError: Cannot read properties of undefined (reading 'addEventListener')`
+ *    → 组件树的后续刷新中断（实测 `@main.*.js:36304`）。
+ *    修在 `ui/overrides/components/layout/PlayDetail/Header.svelte`（判空 + 补 ANDROID 分支
+ *    渲染顶栏，uiux §5「播放详情顶栏控制键（关闭/全屏）→ 44dp、隐藏全屏键」本来就要求它存在）。
+ *
+ * ② 布局塌陷（控件被排到视口外）
+ *    上游 `.left-info` / `.right-lyric` / `.footer` 三处都写了 `contain: strict`
+ *    （= size + layout + paint + style）。**size containment 的含义是「按无内容计算自身尺寸」**，
+ *    而这三处的高度都是 auto（`.left-info` 是 `flex: none`，`.footer` 在 §5 被改成 `height: auto`），
+ *    于是实测 `.left-info` 高 **8px**（只剩 `padding-top: 8px`，内容 `scrollHeight` 234）、
+ *    `.footer` 高 **0**，控制键被排到 y = 1695（暂停）/ 1746（上/下一首）/ 2793（循环），
+ *    再被 `.play-detail` 的 `contain: paint` 裁掉 → 视觉上就是「整屏白」。
+ *    修法：这三处改 `contain: layout paint`（保留样式隔离与裁剪，**去掉 size containment**），
+ *    高度交回 flex。这与 ERR-006（父级高度退化）是同族问题：**看不见的 `contain: size` 会
+ *    让 `height: auto` 静默变成 0，且不报任何错。**
+ *
+ * 纵向预算（412×915 实测，safe-top/bottom = 48）：
+ *   48(safe-top) + 56(顶栏) + ~250(封面+信息) + 歌词(flex:1) + ~250(控制区) + 48(safe-bottom)
+ *   → 歌词仍剩 ~250dp；再小就靠 `.play-detail` 的 `overflow-y: auto` 兜底滚动，绝不裁控件。
+ * -------------------------------------------------------------------------------------- */
+html.mobile .play-detail {
+  box-sizing: border-box;
+  height: 100% !important;
+  padding-top: var(--safe-top, 0px);
+  overflow-x: hidden;
+  overflow-y: auto;              /* 极端小屏/大字号时的兜底：宁可滚，不裁 */
+  overscroll-behavior: contain;
+  border-radius: 0 !important;
+}
+
+/* 顶栏：56dp + 关闭键 44dp（`.control-btn` 是 position:absolute，右对齐） */
+html.mobile .play-detail > .header {
+  flex: 0 0 auto !important;
+  height: 56px !important;
+}
+html.mobile .play-detail .header .control-btn {
+  top: 6px !important;
+  right: 8px !important;
+}
+
+/* 主体：吃掉剩余高度（§5 已把方向改成 column） */
+html.mobile .play-detail .player-detail-main {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+
+/* 封面 + 歌曲信息：去掉 size containment，高度回到内容；封面尺寸由宽度（比例）控制 */
+html.mobile .play-detail .left-info {
+  contain: layout paint !important;
+  flex: none !important;
+  width: 100% !important;
+  height: auto !important;
+  max-height: 40dvh;
+  padding: 4px 20px 0 !important;
+  --content-width: 46%;          /* 412dp 下 ≈ 171dp 见方 */
+}
+html.mobile .play-detail .left-info > :first-child {
+  width: var(--content-width) !important;
+  max-height: none !important;   /* §5 的 38dvh 会破坏 aspect-ratio:1/1 → 非等比拉伸 */
+}
+html.mobile .play-detail .left-info .info {
+  width: 100% !important;
+  max-height: 5.2em;
+  margin-top: 8px !important;
+  overflow-y: auto;
+}
+
+/* 歌词区：吃掉剩余高度，内部自己滚 */
+html.mobile .play-detail .right-lyric {
+  contain: layout paint !important;
+  flex: 1 1 auto !important;
+  min-height: 96px !important;
+  margin-top: 4px;
+}
+
+/* 控制区：去掉 size containment → 高度由内容决定；底部吃 --inset-bottom */
+html.mobile .play-detail .footer {
+  contain: layout paint !important;
+  flex: none !important;
+  height: auto !important;
+  padding-bottom: calc(8px + var(--safe-bottom, 0px)) !important;
+}
+html.mobile .play-detail .footer-content {
+  display: flex !important;
+  flex-flow: column nowrap !important;
+  height: auto !important;
+  padding: 16px 8px 0 !important;
+}
+/* 进度条挪到运输控制**上方**（DOM 顺序是 control → progress → status，这里用 order 换位）。
+   原因：进度条的可拖拽命中带是 44dp 高的 `.progress-mask`（§6），比视觉轨道高一倍；
+   若它排在辅控行下方，那 44dp 会向上溢出并盖住辅控键的下半截 —— 点辅控可能变成拖进度。
+   放到最上面，上方是歌词区（非命中目标），下方留 16px 再进控制行，互不侵占。 */
+html.mobile .play-detail .middle-play-progress {
+  order: 1;
+  flex: none !important;
+  width: 100% !important;
+  margin: 0 0 16px !important;
+  font-size: 12px !important;
+}
+html.mobile .play-detail .middle-play-progress .progress {
+  padding: 10px 0 !important;    /* 与 §6 的 44dp 命中带配合 */
+  margin: 0 8px !important;
+}
+/* 控制行：桌面「左辅控 | 主控 | 右辅控」横排 → 竖排三行（主控在上）。
+   412dp 一行装不下：主控 3 键 72+44+44+gap ≈ 200，两侧辅控各 4 键 × 44 + 3×8 = 200，
+   合计 ≈ 600dp；而 touch 硬底线要求相邻命中区 ≥8dp，不能靠挤在一起解决。
+   所以拆三行：主控 / 左辅控 / 右辅控，每组内 4×44 + 3×8 = 200dp，居中。
+   行间距取 `--gap-min`（8dp）—— 2dp 会让上下两行按钮的命中区几乎贴在一起（实测会被判「间距不达标」）。 */
+html.mobile .play-detail .footer .control {
+  order: 2;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  gap: var(--gap-min) !important;
+}
+/* 主控（上/播放暂停/下）：72dp 主键 + 44dp 副键 */
+html.mobile .play-detail .footer .control > .container {
+  order: 1;
+  justify-content: center;
+  width: 100%;
+  height: var(--touch-play) !important;
+  padding: 0 !important;
+  gap: var(--gap-min) !important;
+}
+html.mobile .play-detail .footer .control > .container .btn {
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+}
+html.mobile .play-detail .footer .control > .container .btn:nth-child(2) {
+  min-width: var(--touch-play);
+  min-height: var(--touch-play);
+}
+/* 两侧辅控：各占一行，居中 */
+html.mobile .play-detail .footer .control > .side {
+  order: 2;
+  flex: none !important;
+  justify-content: center;
+  width: 100%;
+  height: auto !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+html.mobile .play-detail .footer .control > .side.right {
+  order: 3;
+  padding-left: 0 !important;
+}
+html.mobile .play-detail .footer .control > .side > .container {
+  justify-content: center;
+  width: 100%;
+  gap: var(--gap-min) !important;
+}
+/* 辅控命中区 44×44（这些按钮上游是 `<button class="container">`/`.btn`，尺寸各自写死） */
+html.mobile .play-detail .footer .control > .side > .container > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min) !important;
+  min-height: var(--touch-min) !important;
+  height: var(--touch-min) !important;
+  padding: 0 !important;
+  color: var(--color-button-font);
+  background: transparent;
+  border: 0;
+}
+/* 播放状态文字（"Playing..." / 错误提示）：贴底、不吃命中区 */
+html.mobile .play-detail .play-status {
+  bottom: 0 !important;
+  height: 16px !important;
+}

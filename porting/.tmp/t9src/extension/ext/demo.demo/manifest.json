@@ -1,0 +1,31 @@
+{
+  "id": "demo.demo",
+  "name": "演示扩展",
+  "version": "1.0.0",
+  "main": "index.js",
+  "publicKey": "DEMO_PUBLIC_KEY",
+  "grant": [
+    "internet",
+    "music_list"
+  ],
+  "contributes": {
+    "settings": [
+      {
+        "key": "api",
+        "name": "接口地址",
+        "type": "input",
+        "default": "https://example.com/api"
+      },
+      {
+        "key": "quality",
+        "name": "音质",
+        "type": "select",
+        "options": [
+          "128k",
+          "320k"
+        ],
+        "default": "320k"
+      }
+    ]
+  }
+}

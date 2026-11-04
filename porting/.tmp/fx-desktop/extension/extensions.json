@@ -1,0 +1,10 @@
+[
+	{
+		"id": "demo.demo",
+		"name": "演示扩展",
+		"enabled": true,
+		"installedTimestamp": 1793629741089,
+		"updatedTimestamp": 1793629741089,
+		"removed": false
+	}
+]

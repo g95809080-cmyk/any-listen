@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  宽松版：允许任意域名明文。**只用于临时排查**（artifacts 里如果带了这个配置的包，
+  不要当成 release 交付）。
+
+  触发方式：`./gradlew :app:assembleDebug -PallowCleartext=true`
+  （build.gradle.kts 用 manifestPlaceholders 切换，不会同时打进两个配置）
+
+  什么时候真的需要：
+  - 用户在线音源是 http（自建 API / 老 WebDAV / 局域网服务器）；
+  - 排查 TLS 证书问题要临时降级。
+  正式收口应该是往 network_security_config.xml 的 domain-config 里加**具体域名**。
+-->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="true">
+    <trust-anchors>
+      <certificates src="system" />
+    </trust-anchors>
+  </base-config>
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">127.0.0.1</domain>
+    <domain includeSubdomains="false">localhost</domain>
+  </domain-config>
+</network-security-config>

@@ -1,0 +1,76 @@
+<!doctype html>
+<!--
+  `class="mobile"` 直接写在根元素上，而不是等 MobileApp 的 onMount 再加：
+  1. 避免首帧闪一下桌面布局（onMount 到首次绘制之间理论上不留空隙，但 WebView 首屏
+     慢，慢设备上真的会看到一帧桌面版）；
+  2. `ui/mobile.less` 的 22 个触控令牌全部挂在根元素的 `mobile` 类上，早一点生效更安全。
+  MobileApp 里仍然会再加一次（幂等），保证单独挂载时也不会漏。
+
+  ⚠️ 本文件里**不要出现可被字符串搜索命中的标签字面量或全局变量名**。
+  原生 `injectTokenIntoHtml` 是按"文档里第一个 head 开始标签"来定位注入点的；
+  早期这里有一句注释写了带尖括号的 head 标签，结果 token 脚本被插进注释里 → 不执行
+  → 首帧全局缺失 → `origin=n/a`、`PortError: window token 缺失`、core worker 启动失败。
+  native 侧已经把注入逻辑改成"先遮罩注释再定位"（防御），但模板这边也不该继续埋雷。
+-->
+
+<html lang="zh-CN" class="mobile">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>Any Listen</title>
+    <!-- viewport-fit=cover + 安全区由 uiux 的 mobile.less 处理；此处只保证不被缩放、不被系统字体放大 -->
+    <!-- 原生会在 head 开始标签之后注入首帧全局（token / bridge origin），本文件不需要占位注释 -->
+  </head>
+  <body>
+    <!--
+      挂载点必须是 `#root`：上游 `app.less` 的布局规则全部挂在 `#root` 上，
+      notify 的 `App.svelte` 也会把它改成 `display: block`。
+      改回 `#app` 会让整套主题/尺寸变量失效（这是踩过的坑，别改）。
+
+      **不加 `display: none`**（上游模板是 `display: none` 再由 App.svelte 打开）：
+      万一挂载链断在中间，至少还能看到内容而不是全黑屏 —— 移动端排查只能靠截图。
+    -->
+    <div id="root"></div>
+
+    <!--
+      ===== 上游 view-main/index.html 的 boot script（必须保留） =====
+      这段定义了三个全局，缺任何一个都会在运行时炸：
+      - `window.setLang`：`modules/setting` 初始化时调用；缺失直接
+        `Uncaught TypeError: window.setLang is not a function`，模块链路中断；
+      - `window.dom_style` + `window.setTheme`：主题模块 `modules/theme/store/action.ts`
+        直接调用 setTheme 把 `--color-*` 写进这个 style 元素。**没有它整套 CSS 变量一个都写不进 DOM**，
+        表现是白屏/无主题 —— 比 setLang 更致命。
+      位置要求：在 body 内、`#root` 之后、module 入口之前（`document.body.appendChild` 需要 body 已存在）。
+      块作用域 `{ }` 是上游原样保留的：让 `formatLang` 不污染全局。
+      上游末尾的 `//<%- envScript %>` 是桌面 ejs 模板占位，我们没有模板引擎，直接省略。
+    -->
+    <script>
+      {
+        const formatLang = (lang = 'en') => {
+          if (lang === 'zh-cn') return 'zh-Hans'
+          if (lang === 'zh-tw') return 'zh-Hant'
+          return lang.split('-')[0]
+        }
+        window.setLang = (lang = navigator.language.toLocaleLowerCase()) => {
+          document.documentElement.setAttribute('lang', formatLang(lang))
+        }
+        window.setLang()
+
+        window.dom_style = document.createElement('style')
+        document.body.appendChild(window.dom_style)
+
+        window.setTheme = (colors) => {
+          window.dom_style.innerText = `:root {${Object.entries(colors)
+            .map(([key, value]) => `${key}:${value};`)
+            .join('')}}`
+        }
+      }
+    </script>
+
+    <script type="module" src="/entries/main.ts"></script>
+  </body>
+</html>

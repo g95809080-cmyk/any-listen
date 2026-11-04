@@ -1,0 +1,37 @@
+{
+  "name": "@anylisten/android-js",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Any Listen Android 移植层的 JS 侧（零改动复用 source/packages 下的上游源码）",
+  "scripts": {
+    "link-vendor": "node scripts/link-vendor.mjs",
+    "typecheck": "pnpm run link-vendor && node scripts/typecheck.mjs",
+    "copy-wasm": "node scripts/copy-wasm.mjs",
+    "clean": "node scripts/clean.mjs",
+    "clean:spa": "node scripts/clean.mjs spa",
+    "clean:ext": "node scripts/clean.mjs ext",
+    "shrink-assets": "node scripts/shrink-assets.mjs",
+    "build": "pnpm run link-vendor && pnpm run clean:spa && pnpm run copy-wasm && vite build && pnpm run shrink-assets",
+    "build:extension-preload": "pnpm run clean:ext && vite build --config vite.extension-preload.config.mjs",
+    "build:all": "pnpm run build && pnpm run build:extension-preload",
+    "smoke": "node scripts/smoke.mjs",
+    "verify": "pnpm run typecheck && pnpm run build:all && pnpm run smoke"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "buffer": "^6.0.3",
+    "fflate": "^0.8.2",
+    "message2call": "^2.0.3",
+    "node-forge": "^1.3.1",
+    "quickjs-emscripten": "^0.31.0",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/node-forge": "^1.3.11",
+    "@types/sql.js": "^1.4.9",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

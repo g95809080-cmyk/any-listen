@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Any Listen（壳层占位页）</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { height: 100dvh; margin: 0; background: #101014; color: #e8e8ea;
+        font: 15px/1.6 -apple-system, "Segoe UI", "Noto Sans SC", sans-serif; }
+      main { padding: 24px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom))
+        calc(16px + env(safe-area-inset-left)); }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { margin: 8px 0; color: #a0a0a8; }
+      ul { padding-left: 18px; }
+      li { margin: 4px 0; }
+      code { background: #1c1c22; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+      .ok { color: #6ee7a8; }
+      .bad { color: #ff8b8b; }
+      #log { margin-top: 16px; padding: 12px; background: #17171c; border-radius: 10px;
+        font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
+      button { margin-top: 12px; padding: 10px 14px; min-height: 44px; border-radius: 10px;
+        border: 1px solid #34343c; background: #22222a; color: inherit; font-size: 15px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Any Listen · Android 壳层占位页</h1>
+      <p>你看到这一页说明 <code>:webassets</code> 没找到 <code>porting/js/dist</code>，正在使用占位 SPA。
+        原生壳（WebView + LocalHttpServer + 桥）本身已经可用。</p>
+      <ul>
+        <li>LocalHttpServer: <code id="origin"></code></li>
+        <li>注入的 token: <code id="token"></code></li>
+        <li>@JavascriptInterface: <span id="bridge" class="bad">检测中…</span></li>
+        <li>桥 ping 往返: <span id="ping" class="bad">未测</span></li>
+        <li>真实前端产物: 等 <code>porting/js</code> 的 <code>pnpm build:all</code> 通过后重跑 assembleDebug</li>
+      </ul>
+      <button id="probe">测试桥链路</button>
+      <div id="log"></div>
+    </main>
+    <script>
+      // 该页面用于验收壳层骨架：
+      // 1) 静态资源能不能从 LocalHttpServer 拿到（能看到这段文字即通过）
+      // 2) token 有没有被注入到首帧
+      // 3) AndroidBridge 是否可用，message2call 数组帧往返是否正常
+      const logEl = document.getElementById('log')
+      const log = (msg) => { logEl.textContent += msg + '\n' }
+      const token = window.__ANYLISTEN_TOKEN__ || ''
+      document.getElementById('origin').textContent = window.__ANYLISTEN_BRIDGE_ORIGIN__ || location.origin
+      document.getElementById('token').textContent = token ? token.slice(0, 8) + '…' : '(none)'
+      const bridgeEl = document.getElementById('bridge')
+      const hasBridge = typeof window.AndroidBridge !== 'undefined'
+      bridgeEl.textContent = hasBridge ? 'AndroidBridge 就绪' : '未注入（浏览器里打开属正常）'
+      bridgeEl.className = hasBridge ? 'ok' : 'bad'
+
+      // Kotlin → JS 的唯一回程入口（与 porting/js/ports/bridge-client.ts 的
+      // installBridgeReceiver() 同名，改了这边就收不到任何响应）
+      let resolveFrame = null
+      window.__anylisten_bridge_recv__ = (raw) => {
+        log('← ' + raw)
+        if (typeof resolveFrame === 'function') {
+          const fn = resolveFrame
+          resolveFrame = null
+          fn(raw)
+        }
+      }
+
+      // message2call v2 请求帧：[0, eventName, pathname[], args[], callbacks[]]
+      const call = (pathname, args = [], timeoutMs = 5000) => new Promise((resolve, reject) => {
+        const eventName = pathname.join('.') + '_' + Math.random().toString(36).slice(2)
+        const timer = setTimeout(() => { resolveFrame = null; reject(new Error('ETIMEDOUT')) }, timeoutMs)
+        resolveFrame = (raw) => {
+          clearTimeout(timer)
+          let frame
+          try { frame = JSON.parse(raw) } catch (e) { reject(new Error('坏帧: ' + e.message)); return }
+          if (!Array.isArray(frame) || frame[0] !== 1) { reject(new Error('非响应帧: ' + raw)); return }
+          if (frame[2]) reject(new Error(frame[2].code + ': ' + frame[2].message))
+          else resolve(frame[3])
+        }
+        window.AndroidBridge.postMessage(token, JSON.stringify([0, eventName, pathname, args, []]))
+      })
+
+      document.getElementById('probe').addEventListener('click', async () => {
+        if (!hasBridge) { log('没有 AndroidBridge，跳过'); return }
+        log('ping → ' + window.AndroidBridge.ping())
+        const pingEl = document.getElementById('ping')
+        try {
+          const env = await call(['fs', 'getEnv'])
+          log('fs.getEnv → ' + JSON.stringify(env))
+          pingEl.textContent = '正常'
+          pingEl.className = 'ok'
+        } catch (e) {
+          log('fs.getEnv 失败 → ' + e.message)
+          pingEl.textContent = '失败'
+          pingEl.className = 'bad'
+          return
+        }
+        // 流式接口：回调实参在帧里是 func_<n>_<rand> 字符串，下标记在 callbacks[]
+        try {
+          const cbName = 'func_0_' + Math.random().toString(36).slice(2)
+          const batches = []
+          const prev = window.__anylisten_bridge_recv__
+          window.__anylisten_bridge_recv__ = (raw) => {
+            const f = JSON.parse(raw)
+            if (Array.isArray(f) && f[0] === 2 && f[1] === cbName) {
+              batches.push(f[2][0].length)
+              log('onBatch → ' + f[2][0].length + ' 条')
+              return
+            }
+            prev(raw)
+          }
+          const r = await call(['fs', 'listTree'], ['/storage/emulated/0', { maxDepth: 1, batchSize: 20 }, cbName])
+          log('listTree 完成 → ' + JSON.stringify(r) + '，共 ' + batches.length + ' 批')
+        } catch (e) {
+          log('listTree 失败（可能没授权存储）→ ' + e.message)
+        }
+      })
+    </script>
+  </body>
+</html>

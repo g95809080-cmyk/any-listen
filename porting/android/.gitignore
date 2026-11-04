@@ -1,0 +1,19 @@
+# Gradle / AGP
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+.cxx/
+.externalNativeBuild/
+
+# 由 :webassets 从 porting/js 拷入的产物（构建期生成，不入库）
+app/src/main/assets/web/spa/
+app/src/main/assets/web/workers/
+app/src/main/assets/web/wasm/
+app/src/main/assets/web/extension-preload.js
+app/src/main/assets/web/.webassets-stamp
+
+# 但保留占位 SPA（让 assembleDebug 在 porting/js 未就绪时也能跑通）
+!app/src/main/assets/web/placeholder/

@@ -1,0 +1,30 @@
+# ============================================================
+# 本仓库是「移植层」的完整源码，不含上游。
+# 上游按 commit 取到同级 source/ 目录，见 NOTICE §5 与 docs/BUILD-from-source.md
+# ============================================================
+/source/
+
+# 验收证据：截图、logcat、CDP 探针脚本、构建日志、APK 归档（体积大，且含设备信息）
+/artifacts/
+
+# 内部工作记录（阶段过程、每日日志），不属于交付源码
+/.workbuddy/
+
+# 根目录临时截图
+.tmp-*
+
+# 构建产物与本地环境（子目录各有更细的 .gitignore，此处覆盖根级遗漏）
+node_modules/
+*.log
+local.properties
+
+# 签名材料：绝不入库
+*.jks
+*.keystore
+*.apk
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

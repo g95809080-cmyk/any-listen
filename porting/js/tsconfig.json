@@ -1,0 +1,62 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false,
+    "useUnknownInCatchVariables": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@porting/*": ["./*"],
+      /* 绕过覆写直指上游原文件（对应 vite.config.mjs 的 RAW_TARGETS） */
+      "@porting-uplink/web-server/*": ["../../source/packages/web-server/src/*"],
+      "@/*": ["../../source/packages/web-server/src/*"],
+      "@ui/*": ["../../source/packages/view-main/src/*"],
+      /* 绕过覆写直取 view-main 原文件（对应 vite.config.mjs 的 RAW_TARGETS 同名条目） */
+      "@ui-raw/*": ["../../source/packages/view-main/src/*"],
+      "@any-listen/app": ["../../source/packages/shared/app"],
+      "@any-listen/app/*": ["../../source/packages/shared/app/*"],
+      "@any-listen/common": ["../../source/packages/shared/common"],
+      "@any-listen/common/*": ["../../source/packages/shared/common/*"],
+      "@any-listen/nodejs": ["../../source/packages/shared/nodejs/index.ts"],
+      "@any-listen/nodejs/uplink": ["../../source/packages/shared/nodejs/index.ts"],
+      "@any-listen/nodejs/*": ["../../source/packages/shared/nodejs/*"],
+      "@any-listen/i18n": ["../../source/packages/shared/i18n"],
+      "@any-listen/i18n/*": ["../../source/packages/shared/i18n/*"],
+      "@any-listen/theme": ["../../source/packages/shared/theme"],
+      "@any-listen/theme/*": ["../../source/packages/shared/theme/*"],
+      "@any-listen/web": ["../../source/packages/shared/web"],
+      "@any-listen/web/*": ["../../source/packages/shared/web/*"],
+      "music-metadata": ["../../source/packages/shared/nodejs/node_modules/music-metadata"]
+    }
+  },
+  "include": [
+    "entries/**/*.ts",
+    "host/**/*.ts",
+    "ports/**/*.ts",
+    "shims/**/*.ts",
+    "nodejs/**/*.ts",
+    "ui/**/*.ts",
+    "types/**/*.d.ts"
+  ]
+}

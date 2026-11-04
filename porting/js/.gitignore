@@ -1,0 +1,11 @@
+# 依赖（由 pnpm install 生成；vendor 联接见 scripts/link-vendor.mjs）
+node_modules/
+
+# 构建产物
+dist/
+.trash/
+
+# 本地临时
+*.log
+.DS_Store
+Thumbs.db

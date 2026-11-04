@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Any Listen</string>
+    <string name="notification_channel_playback">播放控制</string>
+    <string name="notification_channel_playback_desc">显示当前播放歌曲与控制按钮</string>
+    <string name="notification_paused">已暂停</string>
+    <string name="action_prev">上一首</string>
+    <string name="action_next">下一首</string>
+    <string name="action_play">播放</string>
+    <string name="action_pause">暂停</string>
+    <string name="action_stop">停止</string>
+    <string name="permission_all_files_title">需要「所有文件访问权限」</string>
+    <string name="permission_all_files_message">用于扫描并播放手机里的本地音乐。Android 11 及以上需要手动授予。</string>
+    <string name="permission_go_settings">去设置</string>
+    <string name="permission_cancel">稍后</string>
+    <string name="toast_press_again_to_exit">再按一次退出</string>
+    <string name="webview_load_failed">界面加载失败，请检查本地服务是否启动</string>
+</resources>
