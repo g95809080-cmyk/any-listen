@@ -1039,3 +1039,45 @@ find porting/js/dist/spa/assets -type f | wc -l                # 211
 2. 本轮新增代码只有：`porting/js/shims/fs.ts` 的流式读实现、`porting/js/nodejs/logs.ts` 的降级、`LogPort.kt` 的落盘路径 —— 全部为自研适配层代码（含 2 个 UI 覆写与 1 个 fs 垫片实现），未引入新的第三方依赖，`package.json` 依赖树未变。
 
 因此 C-1（分发前整体 AGPL v3 开源）与 C-2（「禁商用」附加条款的呈现方式）仍是交付前必须由用户书面裁决的硬条件，与本轮重建无关。§3.2 的产物泄露检查（无 `.map`、无源码、`lib/` 为空）对当前包同样成立（`unzip -l` 复核：`lib/` 条目 0 个）。
+
+---
+
+## 附录 E C-1 材料就绪登记（2026-11-04）
+
+本附录只登记**事实与状态**，不改变 §4.2 的结论：C-1 仍未闭环，闭环判据见文末表格。
+各项均可在仓库内直接核对（`git log`、`sha256sum`、`git clone`）。
+
+### E.1 已落地
+
+| 产出 | 位置 | 可核验方式 |
+|---|---|---|
+| 上游许可全文（**逐字节**） | `LICENSE` | `sha256sum LICENSE` = `86e79e49e6b378e23f9ee226a05641506cf91c720804a44f6cec248348cf52c2`，与 `source/LICENSE` 相同 |
+| 移植层许可状态 + AGPL §5 修改声明 + 对应源码获取方式 | `NOTICE` | 六节：作品定位 / 上游与许可 / 移植层许可 / 修改声明 / 对应源码 / 商用与第三方 |
+| 可 `git clone` 的源码树 | 仓库 `main` 分支首个提交 | `git clone . /tmp/x && git ls-files \| wc -l` → **276**；`source/`、`artifacts/`、`.workbuddy/` 均未入库 |
+| 从零重建文档 | `docs/BUILD-from-source.md` | 工具链实测版本、目录布局硬约束、5 步命令、等价判据、已验证/未验证边界 |
+
+**为什么 LICENSE 要单独用 `-text`**：`.gitattributes` 的 `* text=auto eol=lf` 会把上游 LICENSE 的 CRLF
+归一成 LF（680 行 → 少 680 字节），仓库内文件的 `sha256` 与上游就对不上，「逐字节复制、未做编辑」
+这句话随之无法自证。已改为 `LICENSE -text`（禁用一切转换），克隆后指纹与上游完全一致。
+
+**仓库体积**：276 个文件、`.git` 1.9 MB。无二进制膨胀 —— 上游 checkout、`dist/`、`build/`、
+`node_modules/`、验收截图全部排除。
+
+### E.2 仍未闭环
+
+| 判据 | 状态 | 说明 |
+|---|---|---|
+| 干净目录从零重建出等价 APK | ❌ **未实测** | 步骤 0/1/2（取上游 + 两处 `pnpm install --frozen-lockfile`）从未在空目录跑过；预计 40–60 分钟，瓶颈在 `build:all` |
+| 随包第三方 NOTICE（C-3） | ❌ 未生成 | `node-forge → BSD-3-Clause`、`dompurify → Apache-2.0` 两处选举已定，但完整清单未成文 |
+| C-2 呈现方式 | ❌ 待裁决 | 只能由用户/法务定；`NOTICE` 现采用「原样传递、不追加不减免」的事实性写法，该写法在两个候选方案下都成立 |
+| 发布到远端仓库 | ❌ 未执行 | 本地仓库已可 `git clone`；远端需要用户自己的账号与命名 |
+
+### E.3 对 §4.3 ③ 的一处更正（F-5）
+
+§4.3 ③ 记「F-5 `requireWeb` 保护空转……**这条仍未修**」。**该记录已过期**：现行
+`webassets/build.gradle.kts` 已把 `requireWeb` 判定移到 `existing > placeholderFiles` 之外，
+并在抛错前先 `logger.error` 说明原因（注释里写明了干净检出与占位包两种静默通过场景）。
+干净检出时 `-PrequireWeb=true` 会按预期失败，不再静默产出白屏包。
+
+对结论的影响：构建可复现性的阻断项只剩 **F-4（`dist/` 是单一共享可变目录，并发构建互相清空）**，
+该条已在 `docs/BUILD-from-source.md` §3 步骤 3 与 §6 中作为操作约束写明（同一时间只允许一个构建）。

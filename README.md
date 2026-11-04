@@ -2,8 +2,15 @@
 
 把桌面版 [Any Listen](https://github.com/lyswhut/any-listen)（Electron + Koa + better-sqlite3）移植成可在 Android 手机上独立运行的本地音乐播放器：**服务端逻辑与 UI 都跑在手机上**，离线可用，保留第三方扩展生态。
 
-> **许可证与用途**：上游为 **AGPL v3 + 附加禁止商用条款**。本项目按 PDR-003 **仅个人使用与学习，不分发、不商用**。
-> 一旦改变用途（发给他人 / 上架 / 商用），必须先读 `docs/phase6-compliance.md` §4.2 的 C-1 ~ C-7，其中 C-1（整体以 AGPL v3 开源）与 C-2（附加条款呈现方式需用户/法务拍板）是**不满足则不可分发**的硬条件。
+> **许可证**：上游为 **AGPL v3 + 附加禁止商用条款**。许可全文原样保留在根目录 `LICENSE`
+> （`sha256 86e79e49…cf52c2`，与上游文件逐字节相同）；移植层的许可状态、AGPL §5 修改声明、
+> 对应源码获取方式见 `NOTICE`。
+>
+> **用途**：当前按 PDR-003 **仅个人使用与学习，不分发、不商用**。
+>
+> **分发前**：必须闭环 `docs/phase6-compliance.md` §4.2 的 C-1 ~ C-7。其中 **C-1** 的工程材料
+> 已就绪（`LICENSE` / `NOTICE` / 可 `git clone` 的源码树 / `docs/BUILD-from-source.md`），
+> 但「干净目录从零重建」这一条验收判据**尚未实测**；**C-2**（附加条款的呈现方式）仍需你书面裁决。
 
 ---
 
@@ -15,7 +22,11 @@
 | `porting/js/` | 移植层：vite 构建的 SPA + 4 个 worker + Ports 适配层 + 移动端 UI 覆写 | — |
 | `porting/android/` | Android 壳：Kotlin 桥（message2call）、本地 HTTP 服务、WebView 宿主、文件系统/音频/通知 Port | — |
 | `docs/` | 阶段规格、架构决策、UI/UX 规格、移植决策记录（PDR）、合规报告 | — |
-| `artifacts/` | 实测截图、logcat、CDP 探针脚本 | — |
+| `artifacts/` | 实测截图、logcat、CDP 探针脚本（**不入库**，见 `.gitignore`） | — |
+| `LICENSE` / `NOTICE` | 上游许可全文（逐字节复制）+ 移植层许可状态与修改声明 | — |
+
+> 本仓库只含**移植层**。`source/` 由使用者按 `NOTICE` §5 的地址与 commit 检出到同级目录，
+> 已被 `.gitignore` 排除 —— 因此 `git clone` 之后还需一步取上游，见 `docs/BUILD-from-source.md`。
 
 ## 运行形态
 
