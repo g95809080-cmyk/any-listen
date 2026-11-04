@@ -7,6 +7,11 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
+# 许可证全文必须逐字节等于上游（可用 sha256 与上游文件直接核对），禁止换行归一。
+# 上游 LICENSE 本身是 CRLF；若被 text=auto 转成 LF，`sha256sum` 就对不上，
+# 「未做任何编辑」这句话也就无法自证了。
+LICENSE -text
+
 # 二进制：禁止任何换行转换
 *.png binary
 *.jpg binary
