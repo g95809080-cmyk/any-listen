@@ -159,8 +159,22 @@ function normalizeHeaders(headers?: Record<string, string | string[]>): Record<s
   return result
 }
 
-function parseBody(text: string, headers: Record<string, string | undefined>): unknown {
-  const contentType = headers['content-type'] ?? headers['Content-Type'] ?? ''
+/**
+ * 响应体的 JSON 解析判定。
+ *
+ * **判据必须用「请求头」，不是「响应头」** —— 这一点是上游 `shared/nodejs/request.ts:286`
+ * 的原样语义：`!headers['content-type'] || headers['content-type'].includes(json)`，其中
+ * `headers` 是 `buildRequestBody()` 返回的**请求**头。GET 请求没有 body，因此没有
+ * Content-Type，条件恒真 → 一律先试 `JSON.parse`，失败再退回文本。
+ *
+ * 曾经这里传的是 `responseHeaders`，于是 GitHub raw 那种 `content-type: text/plain` 的
+ * JSON 会被原样当字符串返回：扩展商店 `getList()` 拿到字符串 → `body.all` 为 undefined
+ * → 抛 `Invalid list data` → 商店页永远「列表竟然是空的...」。
+ * 更隐蔽的是 `eachMirror` 只在**请求 reject** 时才回退镜像，数据校验失败不回退，
+ * 所以「能连上 raw.githubusercontent.com」的网络反而必挂，连不上（走 jsdelivr）才正常。
+ */
+function parseBody(text: string, requestHeaders: Record<string, string | undefined>): unknown {
+  const contentType = requestHeaders['content-type'] ?? requestHeaders['Content-Type'] ?? ''
   if (!contentType || contentType.includes(CONTENT_TYPE.json)) {
     try {
       return JSON.parse(text) as unknown
@@ -222,7 +236,8 @@ export const request = async <T = unknown>(url: string, options: Options = {}): 
 
   const text = response.body ?? ''
   return {
-    body: parseBody(text, responseHeaders) as T,
+    // 传**请求头**：语义对齐上游（见 parseBody 的注释），不是笔误
+    body: parseBody(text, headers) as T,
     headers: responseHeaders,
     statusCode: response.statusCode,
     history: response.history,

@@ -71,6 +71,10 @@ WebView 通过 `http://127.0.0.1:<随机端口>?t=<token>` 加载 SPA，与 `/st
 | A-16 | `view-main/src/shared/ipc/app/index` | `ui/overrides/shared/ipc/app/index.ts` | **O-6** 只替换 `showOpenDialog`/`showSaveDialog`（Android 无原生对话框 IPC，改走内置文件浏览器），其余 30+ 转发函数 `export *` 继承 |
 | A-17 | `web-server/src/app/modules/extension/index` | `host/app/modules/extension/index.ts` | 上游 `readFile(joinPath(__dirname,'extension-preload.js'))` 在 Worker 里 `ReferenceError`（core.worker 启动失败 → 永久 Loading），改为 fetch 静态资源；另加 restart 串行链（ERR-011） |
 | A-18 | `view-main/src/components/common/PlaylistBtn/shared` | `ui/overrides/components/common/PlaylistBtn/shared.ts` | **O-8**（D-16 第二入口）：播放列表（队列）用 `createClickHandle` 做 400ms 双击窗口，首击空转；触屏改为单击即切歌。配套 A-13 的曲库列表单击即播 |
+| A-19 | `view-main/src/views/Extenstion/OnlineList.svelte` | `ui/overrides/views/Extenstion/OnlineList.svelte` | **O-9**（D-33）：扩展商店是桌面双列网格 `minmax(300px,1fr)` + 卡片 `min-width:300px`，393px 视口下 pxtorem 把 300px 压到 ~174px → 排两列、卡片互相压盖。改单列 |
+| A-20 | `view-main/src/views/Extenstion/Header.svelte` | `ui/overrides/views/Extenstion/Header.svelte` | **O-10**（D-33）：顶栏 5 个中文 Tab 放进 393px 被压成竖排（「已/安/装」）。改为横向滚动 + 标签不换行 |
+| A-21 | `view-main/src/views/Extenstion/InstalledList.svelte` | `ui/overrides/views/Extenstion/InstalledList.svelte` | **O-11**（D-33）：与 O-9 同一张桌面双列网格，用在「已安装」列表上；装完扩展即复现压盖，一并改单列 |
+| A-22 | `view-main/src/views/Extenstion/ListItemOnline.svelte` | `ui/overrides/views/Extenstion/ListItemOnline.svelte` | **O-12**（D-33）：卡片 `height:100px` 经 pxtorem 只剩 58px，而内容需 ~94px → 描述压到版本行上；改高度自适应 + 宽度交给网格列 |
 
 > 另有反向通道 `RAW_TARGETS`（`@any-listen/nodejs/uplink`、`@porting-uplink/web-server/app/modules/extension`、
 > `@ui-raw/shared/ipc/app`），仅供覆写文件内部引用「上游原版本」，不改变任何上游文件的解析结果；
@@ -145,7 +149,7 @@ ADB=/c/Users/kuma/AppData/Local/Android/Sdk/platform-tools/adb.exe
 ## 当前状态
 
 **交付物**：`porting/android/app/build/outputs/apk/debug/app-debug.apk`
-**sha256 `ceb58fa9aa138cd71388c79004e32b870b2064062b86f8fb6e0d1e0312708df6`**，24,343,888 B，包内入口 `assets/web/spa/assets/main.CJYsJ0I6.js`。
+**sha256 `bf1fb3f753a3e30a15dc6337a05af7c9f8ddc1c367cd8859484d62e661eac74e`**，24,343,888 B，包内入口 `assets/web/spa/assets/main.DyHrx_ma.js`。
 
 > ⚠️ 连续几轮的包**字节数完全相同**（都是 24,343,888，更早是 24,343,591）—— 判身份一律用 **sha256 + 包内 `main.*.js` 文件名**，比对大小会误判成「没换包」（D-13 就是这么漏出去的）。Kotlin 侧改动还要额外用 `unzip -p … classes*.dex | grep` 确认真进了包。
 
@@ -183,7 +187,12 @@ ADB=/c/Users/kuma/AppData/Local/Android/Sdk/platform-tools/adb.exe
 | D-30 | 进「日志输出」页抛 `ENOENT: log file not found …/files/app/logs/app.log`，页面无内容 | **写入与读取路径不一致**：Kotlin 写 `files/logs/anylisten-<日期>.log`，UI 按上游约定读 `files/app/logs/app.log` | `LogPort` 落盘改为 `files/app/logs/app.log`；`readLastLines` 文件不存在时返回空列表而非抛 ENOENT；JS 桥接层再加一层降级。实测：日志页读到 3,943 字符真实日志、进出两次 0 未捕获异常、旧目录停写 |
 | D-27 | 返回键第 1 档只认 `.popup` / `.menu`，不含 `.modal` → 「播放详情 + 声音设置」时按返回把播放详情关掉、弹窗留成孤儿 | Modal 是居中对话框，既不是 `.popup` 也不是整屏覆盖层，原三档优先级里没有它的位置 | `androidBack.ts` 改为四档：**弹层 → 弹窗 → 播放详情 → hash 栈**，第 2 档走 `dismissModal()`。关闭入口不是「点关闭键」而是给 `.content` 派发 Escape（上游 `onkeydown` 处理，`keyclose` 默认 true）——因为本构建 `VITE_IS_DESKTOP/WEB` 皆 false，Modal 的 header 根本不渲染。**踩坑**：`querySelector('.header button')` 会命中弹窗内容区自带的「重置」按钮（音效面板有两个），一开始按返回等于重置用户配置；改为 `:scope > .content > header > button` 严格作用域。实测：三次返回依次关「倍速浮层 → 音效弹窗 → 播放详情」，探针 `__resetClicked=false` |
 | D-31 | 长时间息屏/后台后 WebView 渲染进程被系统回收，回来页面变 `chrome-error://`，只能强杀 App | 从未实现 `WebViewClient.onRenderProcessGone`：框架默认返回 false 即**杀整个 app 进程**；页面进了错误页也没有任何自愈路径 | `MainActivity` 把 WebView 装配抽成 `createWebView()`（初建与重建共用一份配置），`onRenderProcessGone` 返回 true 并在 `post{}` 里「摘视图 → destroy → 新建 → loadApp」；`onResume` 检测 `chrome-error` 前缀走 `recoverPage()`；主文档加载失败也自愈。重建时 `LifecycleHub.clear()` 作废旧订阅（否则监听器按重建次数叠加）。实测：`Page.crash` 连杀三次（含后台态）进程号不变、679/573ms 恢复、`am send-trim-memory` 只收到 1 条回调（未叠加）、0 FATAL |
+| D-32 | **扩展商店永远是「列表竟然是空的...」**，8 个在线扩展一个都看不到（点安装也无从谈起） | `porting/js/nodejs/request.ts` 的 `parseBody` 用**响应头** Content-Type 判断是否 `JSON.parse`；上游 `request.ts:286` 用的是**请求头**（GET 无 body → 无该头 → 一律先试解析）。GitHub raw 对 `.json` 返回 `text/plain` → 移植层把 JSON 当字符串返回 → `body.all` undefined → 抛 `Invalid list data`。而 `eachMirror` 只在**请求 reject** 时换镜像，数据校验失败不换 → **能连上 raw 的网络反而必挂，连不上（走 jsdelivr）才正常** | 改为传请求头（`parseBody(text, headers)`），语义与上游逐字对齐。实测：商店列出 4–8 个扩展、名称/描述/版本/安装按钮齐全，`Invalid list data` 归零 |
+| D-33 | 商店有数据后卡片**双列挤压重叠**、描述压到版本行上、顶部 5 个中文 Tab 被压成竖排 | 三处桌面尺寸叠加：① `mobile.less` 的 `html.mobile ul` 强制两列 `minmax(150px,1fr) !important`；② 卡片 `min-width:300px` + `height:100px`（pxtorem 后只剩 58px，内容要 94px）；③ `mobile.less` 的「封面 96dp」规则 `html.mobile .view-container > .header .left{width:96px!important}` 误命中 Tab 条（Tab 的对齐类也叫 `.left`）→ 标签条被钉成 96px | ① 全局规则改 `ul:not(.ext-list)`，两个扩展列表加 `ext-list` 类并改单列；② 卡片高度自适应、宽度交给网格；③ 封面规则加 `:not([role='tablist'])`；④ 顶栏改两行（标签条整行 + 操作区右对齐）。实测：单列 361px、卡片无重叠、4 个 Tab 完整横排、`本地安装` 独立一行 |
 
 **已验证平台**：412×915 竖屏模拟器（x86_64 / API 36 / WebView Chromium 133）+ **arm64 真机 Xiaomi 2211133C / Android 16（393×872 CSS / dpr 2.75）**。真机复验结论见验收报告 §11：冷启动 490ms、六条判据齐全、D-10/D-11/D-22/D-23 全部成立、0 崩溃 0 ANR；因包内**无任何 `.so`（ABI 无关）**，「arm64 缺库」风险不成立。
 
-**未覆盖范围（签字边界，别当担保用）**：横屏、平板/折叠屏、外接指针、release 构建、离线扩展商店（取证机无外网）、Android 版本跨度（仅 16 与 API 36 模拟器）。
+**未覆盖范围（签字边界，别当担保用）**：横屏、平板/折叠屏、外接指针、release 构建、Android 版本跨度（仅 16 与 API 36 模拟器）。
+
+> **扩展商店（本轮已覆盖）**：此前记的「离线扩展商店（取证机无外网）」是误判 —— 设备网络其实能到 GitHub raw（实测 339ms / 200），商店为空是 D-32 的解析缺陷。修完后已在真机列出 4–8 个扩展并截图。
+> 但该网络下首屏偶发很慢（OkHttp 侧 raw 不通时会按 15s×3 重试再换 jsdelivr，最坏要几分钟，期间显示「加载中」；此时 i18n 未取到会让描述显示成 `description` 键名）。这是**网络与重试策略**问题，不是渲染缺陷，已记入待排期。

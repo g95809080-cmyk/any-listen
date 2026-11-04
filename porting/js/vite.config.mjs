@@ -113,6 +113,25 @@ const OVERRIDES = {
   // 覆写只改模板，script 段逐行保留。空态里的「导入本地音乐」是手机上加歌的**唯一入口**
   // （`importLocalFile()` 全仓只有桌面 Aside 的右键菜单在调，移动壳没有 Aside）。
   'view-main/src/views/Library/index.svelte': 'ui/overrides/views/Library/index.svelte',
+  // O-9 / O-10：扩展商店的数据能加载之后的手机布局（D-33）。上游是桌面双列网格
+  // （`minmax(300px,1fr)`）+ 卡片 `min-width:300px`，在 393px 视口里 pxtorem 把 300px 压到
+  // ~174px → 排成两列 174px，而卡片仍按 280px 排版 → 互相压盖、右侧裁切；顶栏 5 个中文
+  // Tab 也被压成竖排。改为单列 + 顶栏横向滚动。
+  // 注意：`.list` / `.header` 都是被其它页面复用的类名，所以改在**组件内部**（Svelte scoped
+  // style），不要写进全局 mobile.less。
+  'view-main/src/views/Extenstion/OnlineList.svelte':
+    'ui/overrides/views/Extenstion/OnlineList.svelte',
+  'view-main/src/views/Extenstion/Header.svelte':
+    'ui/overrides/views/Extenstion/Header.svelte',
+  // O-11：与 O-9 同一张网格规则，只是用在「已安装」列表上。装完扩展就会复现同样的压盖，
+  // 一起改，避免"修了商店、装完又坏"。
+  'view-main/src/views/Extenstion/InstalledList.svelte':
+    'ui/overrides/views/Extenstion/InstalledList.svelte',
+  // O-12：扩展卡片是桌面定尺（`height:100px` + `min-width:300px`）。本构建根字号 ~9.3px，
+  // 100px 经 pxtorem 只剩 58px，内容要 ~94px → 描述文字压到版本行上（D-33）。
+  // 改为高度自适应 + 宽度交给网格列。
+  'view-main/src/views/Extenstion/ListItemOnline.svelte':
+    'ui/overrides/views/Extenstion/ListItemOnline.svelte',
   // O-6：`@/shared/ipc/app` 的两个文件对话框。
   // 上游桌面走 `ipc.showOpenDialog`，Android host **没有也不需要**这个实现（原生 SAF 选择器
   // 拿到的 content:// URI 喂不进 `shims/fs`）；网页版走的是内置文件浏览器弹窗

@@ -976,3 +976,77 @@ D-31 是 §13.5 里顺带记录的那条观察，D-27 是 v3 缺陷清单里最�
 1. **`.trash` 拖慢构建**：`porting/js/.trash/` 累积了 9 个 old 目录（约 200 MB），每次 `build:all` 的 clean 阶段都要尝试删除、失败后继续，实测把构建从 17 分钟拖到 25 分钟。手工清空即可。
 2. **gradle 会重复跑 JS 构建**：`:webassets:syncWebAssets` 依赖 `buildWebJs`，所以「先 `pnpm build:all` 再 `./gradlew assembleDebug`」= 跑两遍（约 45 分钟）。给了 `-PskipWeb=true` 之后是 22 秒，已写进 README 构建段。
 3. **`mobile.less` 里 `.modal .header` 那 5 条规则是死样式**：本构建 Modal 不渲染 header。留着不影响，但别照着它推断「手机上有关闭键」。
+
+---
+
+## 15. 扩展商店：为什么是空的（D-32 / D-33，真机，2026-11-04 15:0x）
+
+现象：扩展管理 → 扩展商店恒定显示「列表竟然是空的...」，8 个在线扩展一个都不显示。
+此前 QA 把这页记为「未覆盖（取证机无外网）」。**这个前提本身是错的** —— 本轮实测设备网络
+能到数据源：`fetch` GitHub raw 返回 200 / 339 ms，jsdelivr 897 ms，`list.json` 5,171 字节。
+
+### 15.1 D-32：`parseBody` 用错了头（P1，功能不可用）
+
+| 项 | 内容 |
+|---|---|
+| 落点 | `porting/js/nodejs/request.ts` → `parseBody()` |
+| 上游语义 | `source/packages/shared/nodejs/request.ts:286` —— `!headers['content-type'] \|\| headers['content-type'].includes(json)`，`headers` 是 **`buildRequestBody()` 返回的请求头**。GET 没有 body ⇒ 没有 Content-Type ⇒ 条件恒真 ⇒ 一律先试 `JSON.parse`，失败才退回文本 |
+| 移植层 | 传的是 `responseHeaders`。GitHub raw 对 `.json` 返回 `text/plain; charset=utf-8` ⇒ 不解析 ⇒ `body` 是字符串 |
+| 后果链 | `onlineList.ts:112` 的 `!Array.isArray(body.all)` → 抛 `Invalid list data`（logcat 实测：`[main] unhandled rejection Error: Invalid list data`） |
+| 为什么长期没被发现 | `eachMirror` 只在**请求 reject** 时换镜像（`mirrorReuqest.ts:eachMirror` 的 `.catch`），**数据校验失败不回退**。所以「raw 连得上」的网络必挂，「raw 连不上、走 jsdelivr」反而正常 —— 国内桌面环境正好是后者 |
+
+**修法**：`parseBody(text, headers)`（传请求头），并在函数头写明这个判据为什么不能用响应头。
+
+**实测**：修复后商店列出 8 个扩展（Online Metadata / LX Music API Source Loader / GD音乐台 /
+LX Music List Transform …），名称、中文描述、版本号、安装按钮齐全；`Invalid list data` 计数 0，
+`FATAL EXCEPTION` 0。
+
+### 15.2 D-33：数据有了之后才暴露的三处桌面尺寸（P2，观感）
+
+| # | 冲突点 | 表现 |
+|---|---|---|
+| ① | `mobile.less` 的 `html.mobile ul { grid-template-columns: repeat(auto-fill, minmax(150px,1fr)) !important }` | 把所有 `ul` 强制两列（361px 视口 → 两列 174px） |
+| ② | 卡片 `min-width:300px; height:100px`（pxtorem 后 58px） | 卡片比所在列宽 → 互相压盖；内容需 ~94px → 描述压到版本行上 |
+| ③ | `mobile.less` 的「封面 96dp」：`html.mobile .view-container > .header .left { width:96px !important; height:96px !important }` | **误命中 Tab 条** —— 上游 `Tab.svelte` 的对齐类也叫 `.left`。标签条被钉成 96×96，只显示一个多标签 |
+
+**修法**（四个覆写 + 两条全局规则收窄）：
+
+| 落点 | 改动 |
+|---|---|
+| `mobile.less` §8 | `html.mobile ul` → `html.mobile ul:not(.ext-list)` |
+| `mobile.less` §4 | 封面规则加 `:not([role='tablist'])`（Tab 根节点带 `role="tablist"`，封面容器没有） |
+| O-9 `OnlineList.svelte` | `.list` 改 `grid-template-columns: 1fr`；列表加 `ext-list` 类 |
+| O-11 `InstalledList.svelte` | 同上（装完扩展就会复现同样压盖，一起改） |
+| O-12 `ListItemOnline.svelte` | 卡片 `height: auto; min-height: 100px; min-width: 0; width: 100%` |
+| O-10 `Header.svelte` | 顶栏改两行：标签条整行（`width: auto` + `overflow-x:auto`）+ 操作区右对齐 |
+
+> ⚠️ **`width: 100%` 在这里是陷阱**：标签条上写 `width:100%` 会被解析成 96px（收缩后的参考框），
+> 只有 `width: auto` 才是 361px。排查时用 CDP 逐条枚举 `document.styleSheets` 命中规则才定位到
+> 那条 96px 的 `!important`，否则会一直以为是 flex 布局问题。
+
+**实测**（Xiaomi 2211133C / Android 16 / 393×872 CSS）：
+
+| 判据 | 修前 | 修后 |
+|---|---|---|
+| 列表列数 | `174.364px 174.364px`（两列） | `360.727px`（单列） |
+| 卡片宽度 / 高度 | 300 / 58（内容溢出） | 361 / 自适应 |
+| 顶栏标签 | 标签条 269px，第 4 个被截成「扩展」 | 标签条 361px，4 个标签完整横排 |
+| 本地安装 | 与标签同行、垂直错位 | 独立一行右对齐 |
+| 截图 | `artifacts/d32-store.png` | `artifacts/d33-cards.png` |
+
+### 15.3 交付物
+
+| 项 | 值 |
+|---|---|
+| APK | 24,343,888 B，sha256 `bf1fb3f753a3e30a15dc6337a05af7c9f8ddc1c367cd8859484d62e661eac74e` |
+| 包内入口 | `assets/web/spa/assets/main.DyHrx_ma.js` |
+| 归档 | `artifacts/device-after-d32-d33.apk` |
+| 一致性 | `check-webdist --assets` → `VERDICT: OK` |
+| 上游 | `git -C source status --porcelain` = 0 行 |
+
+### 15.4 仍未解决（网络侧，非渲染）
+
+该网络下 OkHttp 到 raw 时通时不通：不通时会按「15s × 3 次重试」再换 jsdelivr，最坏 3–4 分钟
+才出结果，期间商店显示「加载中」；若 i18n 两个请求没回来，描述会显示成 `description` 键名
+（文案降级，不影响安装）。**已记入待排期**：给 `mirrorRequest` 加整体 deadline、或对
+`Invalid list data` 也触发镜像回退、i18n 失败不阻塞列表渲染。

@@ -339,7 +339,11 @@ html.mobile .my-list .header {
 html.mobile .view-container > .header {
   padding: 12px 16px !important;
 }
-html.mobile .view-container > .header .left {
+html.mobile .view-container > .header .left:not([role='tablist']) {
+  /* ⚠️ 必须排除 `role="tablist"`。上游 `Tab.svelte` 的对齐类也叫 `.left`
+     （`class={['list', align]}`，align 默认 'left'），所以这条「封面 96dp」规则会把
+     **任何 Tab 条**一起钉成 96×96 —— 表现为标签条只显示一个多标签、其余被裁掉（D-33）。
+     封面容器不是 tablist，用它区分最省事。 */
   width: 96px !important;
   height: 96px !important;
 }
@@ -480,8 +484,14 @@ html.mobile .header > .list .list-item .label {
 }
 
 /* ---------- 8. 卡片网格：300px → 150px（2 列）---------- */
-/* 只对 display:grid 的元素生效，非 grid 的 ul 完全不受影响 → 可安全放宽选择器 */
-html.mobile ul {
+/* 只对 display:grid 的元素生效，非 grid 的 ul 完全不受影响 → 可安全放宽选择器。
+ *
+ * ⚠️ 必须排除 `.ext-list`（扩展商店 / 已安装列表，见 O-9 / O-11）。
+ * 这条规则带 `!important`，会盖掉组件内部 scoped style 里写的 `grid-template-columns: 1fr`；
+ * 而扩展卡片自带 `min-width: 300px`，被塞进 174px 的列里就会互相压盖（D-33 的第二个表现）。
+ * 两个扩展列表在覆写组件里显式加了 `ext-list` 类，这里用 `:not()` 让位——
+ * 比在组件里再加一层 `!important` 对轰可靠，也不会波及曲库/专辑等真正的卡片网格。 */
+html.mobile ul:not(.ext-list) {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
   gap: 12px !important;
   padding: 0 16px 16px !important;
