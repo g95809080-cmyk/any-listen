@@ -1112,3 +1112,30 @@ quickjs wasm 变体，产物只引用其中 1 个（`release-sync`，扩展沙�
 
 **仍未覆盖**：重建包未安装到真机跑行为验收（设备是用户日常机，未擅自覆盖安装）。
 若要把「等价」钉到行为层面，需装一次并复跑六条启动判据 —— 这一步只能由用户决定何时做。
+
+### E.5 重建包真机复跑（2026-11-04 12:41）
+
+设备：Xiaomi 2211133C / Android 16 / 1080×2400（393×872 CSS）/ arm64。
+安装方式：`adb install -r artifacts/c1-rebuild-app-debug.apk`（Streamed Install: Success，覆盖安装，数据保留）。
+
+| # | 判据 | 实测 | 判定 |
+|---|---|---|---|
+| 1 | `bootstrap dataPath` | `/data/user/0/com.anylisten.android/files, externalRoot=/storage/emulated/0` | ✅ |
+| 2 | `sqlite ready` | `db=…/files/app/anylisten.data.db preloaded=true` | ✅ |
+| 3 | `quickjs ready` | 2 条（`[shims/vm]` + `[ext.worker]`） | ✅ |
+| 4 | `core worker ready` | `[bootstrap] core worker ready` @12:41:04.533 | ✅ |
+| 5 | `webview client connected` | `[ipc] webview client connected (main)` @12:41:04.532 | ✅ |
+| 6 | `Displayed` | **+745 ms**（交付包历史值 490 / 762 / 790 ms） | ✅ < 1.5 s |
+| — | `FATAL EXCEPTION` | 0 | ✅ |
+| — | `backup failed` | 0 | ✅ |
+| — | 界面 | 曲库「试听列表」3 首、迷你播放器、三标签栏齐全，无白屏/错误页 | ✅ |
+
+链路时序：`bootstrap` 12:41:04.207 → `sqlite ready` .369 → `webview client connected` .532
+→ `core worker ready` .533，即 bootstrap 到 worker 就绪 **326 ms**。
+
+**结论**：C-1 的「能重建出等价 APK」在**结构**（`check-webdist` 三项指纹全等）与**行为**
+（六条启动判据 + 零崩溃 + 零备份失败 + 界面真实渲染）两层都成立。
+唯一不成立的是**字节级复现**，且已知其原因为分块哈希连锁与孤儿 wasm（见 E.4），不影响等价性。
+
+> 设备上现装的是重建包（`main.oGPa8w3b.js`，19.9 MB）。它与交付包的唯一实质差别是少带
+> 3 个未被引用的 wasm（4.4 MB）。若要回到交付包，覆盖安装 `artifacts/device-after-d31-d27.apk` 即可。

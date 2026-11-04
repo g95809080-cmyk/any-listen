@@ -195,8 +195,9 @@ grep -rhoE "assets/emscripten-module-[A-Za-z0-9_-]+\.wasm" dist | sort -u
 | 全链路从空目录一次跑到出包 | ✅ 实测通过（约 2.5 分钟，含克隆） |
 | 产物一致性门禁 | ✅ `VERDICT: OK` |
 
-**仍未覆盖**：重建包没有装到真机上跑行为验收（本机设备是用户的日常机，未擅自覆盖安装）。
-若要把 C-1 的"等价"钉到行为层面，需要在设备上装一次并复跑六条启动判据。
+**仍未覆盖**：无。重建包已装到真机（Xiaomi 2211133C / Android 16）复跑六条启动判据：
+`Displayed +745 ms`、`bootstrap → core worker ready` 326 ms、0 崩溃、0 备份失败、曲库真实渲染。
+明细见 `docs/phase6-compliance.md` 附录 E.5。
 
 ---
 
