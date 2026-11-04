@@ -26,14 +26,22 @@
 
 ## 2. 目录布局（硬要求）
 
+`git clone` 得到的是整个仓库；上游要检出到**仓库根目录内**的 `source/`：
+
 ```
-<任意父目录>/
-├── source/          ← 上游，按 commit 检出（不在本仓库内）
-└── porting-tree/    ← 本仓库（含 porting/、docs/、README、LICENSE、NOTICE）
+any-listen-android/            ← 本仓库（git clone 得到的目录）
+├── source/                    ← 上游，按 commit 检出；不入库（.gitignore 已排除）
+│   └── packages/view-main/…
+├── porting/
+│   ├── js/                    ← 下文所有 `pnpm` 命令的 ROOT
+│   └── android/
+└── docs/  LICENSE  NOTICE  README.md
 ```
 
-**为什么必须同级**：`porting/js/vite.config.mjs` 以 `../../source/packages` 解析上游模块。
-换布局就必须改构建配置，改完就不再是"按文档原样重建"。
+**为什么必须在仓库根内**：`porting/js/vite.config.mjs:57` 与 `porting/js/scripts/link-vendor.mjs:29`
+都以 `ROOT/../../source` 解析（ROOT = `porting/js`），落点正是 `<仓库根>/source`。
+把上游放在仓库旁边（`<父目录>/source`）会解析到仓库根的上一级，两个脚本都会报「找不到 source」。
+
 
 ---
 
@@ -54,8 +62,18 @@ git -C source checkout c8f40eab05021735b969e5991e6ec2f2c63e83b8
 ### 步骤 1 · 装上游依赖（**最容易漏的一步**）
 
 ```bash
-cd source && pnpm install --frozen-lockfile
+cd source && pnpm install --frozen-lockfile --ignore-scripts
 ```
+
+**为什么带 `--ignore-scripts`**：上游依赖 `better-sqlite3@13`，它装完会跑 node-gyp 编译原生扩展。
+在**没有 MSVC 构建工具**的机器上必然失败（实测报 `gyp ERR! find VS`，整个 install 以 exit 1 中断，
+后续所有步骤连锁失败）。而这个原生模块**对本移植完全无用**：数据库走 `sql.js`(WASM) + Kotlin
+`SqlitePort`，`dist/spa/assets/*.js` 里没有任何 `require('better-sqlite3')`，只有一处字符串残留。
+跳过脚本只影响这个用不到的原生二进制，不影响任何被 bundle 的代码。
+（有完整 C++ 工具链的机器可以不加；加了也等价。）
+
+**其它前提**：非交互 shell（CI、脚本）里 pnpm 需要 `CI=true`，否则它在重建 `node_modules`
+时会以 `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 中止。
 
 漏了会这样失败：`porting/js/scripts/link-vendor.mjs` 要把
 `source/packages/view-main/node_modules` 目录联接进 `porting/js/node_modules`，
@@ -83,6 +101,13 @@ pnpm build:all
 
 ### 步骤 4 · 打 APK
 
+**先解决 SDK 路径**：`local.properties` 是本地文件、不入库，所以干净检出里**没有**它。
+不设 `ANDROID_HOME` 会直接失败（`SDK location not found … porting/android/local.properties`）：
+
+```bash
+export ANDROID_HOME=/path/to/Android/Sdk    # Windows: C:/Users/<你>/AppData/Local/Android/Sdk
+```
+
 ```bash
 cd ../android
 ./gradlew assembleDebug -PrequireWeb=true -PskipWeb=true
@@ -100,47 +125,78 @@ cd ../android
 ### 步骤 5 · 验证产物是"真的"
 
 ```bash
-# ① 一致性门禁：dist ↔ assets 逐文件指纹比对
+# ① 一致性门禁：dist ↔ assets 逐文件指纹比对（唯一的硬判据）
 node scripts/check-webdist.mjs --assets      # 期望 VERDICT: OK, exit 0
 
-# ② 入口名（内容哈希，可用来判断"是不是同一次构建的内容"）
+# ② 记录入口名与包体（用于登记，不要用来判"是否同一次构建"）
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -o 'assets/web/spa/assets/main\.[A-Za-z0-9_-]*\.js'
 
 # ③ 有没有把源码/映射文件漏进包（应为空）
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E '\.map$|assets/web/spa/src/' || echo "clean"
+
+# ④ 被引用的 quickjs wasm 必须在包内（扩展沙箱靠它）
+grep -rhoE "assets/emscripten-module-[A-Za-z0-9_-]+\.wasm" dist | sort -u
 ```
 
 ---
 
 ## 4. "等价"怎么判定（**不是**字节相同）
 
-不要用 `sha256` 对比两份 APK —— debug 签名带时间戳、zip 条目带 mtime，同一份源码
-两次构建的字节数都不保证相同（本项目连续三个包的字节数**完全一样**，纯属巧合，
-所以更不能拿大小当判据）。
+先把实测结果摆出来：同一份源码，交付包与干净重建包**字节不同、入口哈希也不同**。
+所以判据只能建立在「结构与行为」上，不能建立在指纹上。
 
-可信的等价判据，按强度排序：
+| # | 判据 | 交付包（参考） | 干净重建 |
+|---|---|---|---|
+| 1 | `check-webdist.mjs --assets` | `VERDICT: OK` | `VERDICT: OK` |
+| 2 | 被引用的 quickjs wasm | 1 个被引用（`NWak2PoB`） | 1 个被引用（同名） |
+| 3 | Kotlin 新符号 | `rebuildWebView` / `recoverPage` 在 dex 内 | 同（源码相同） |
+| 4 | 行为 | 六条启动判据 + 真机闭环 | 需实机验收（本机未装） |
+| — | 包体 | 24,343,888 B / 348 条目 | 19,890,423 B / 345 条目 |
+| — | 入口名 | `main.CJYsJ0I6.js` | `main.oGPa8w3b.js` |
 
-1. **`check-webdist.mjs --assets` 返回 `VERDICT: OK`** —— 它比对 dist 与 assets 的指纹，
-   保证"SHA1 三方相同"这条链路在包内成立。
-2. **包内 `assets/web/spa/assets/main.<hash>.js` 文件名相同** —— Vite 的文件名哈希由
-   内容决定，名字相同即内容相同。参考包是 `main.CJYsJ0I6.js`。
-3. **assets 文件数相同** —— 参考包为 121 个 `assets/web/` 条目、348 个 zip 条目（24,343,888 B）。
-4. Kotlin 侧改动无法用文件名验证，需查符号：
-   `unzip -p app-debug.apk classes*.dex | grep -ac rebuildWebView`（应 > 0）。
+**两条不能用的判据（都有实测反例）：**
+
+- ❌ **包内 `main.<hash>.js` 文件名相同**。差异从主 chunk 第 70 字节就开始了，落在
+  `__vite__mapDeps` 的懒加载分块名上 —— 是分块哈希连锁，不是逻辑改动：
+  131 个不反向引用主 chunk 的分块**逐字节相同**。跨环境重建出现不同哈希是正常的。
+- ❌ **zip 条目数 / 字节数相同**。本机交付包连续三个包字节数完全一样（24,343,888），
+  纯属巧合；而干净重建比它少 3 条、4.4 MB。
+
+**少掉的 3 条已定位，不是缺文件**：交付包的 `dist/spa/assets` 里有 4 个
+`emscripten-module-*.wasm`，但产物只引用其中 1 个（`release-sync` 变体，扩展沙箱用它），
+另外 3 个是 `shrink-assets.mjs` 没删掉的孤儿。干净重建只留下被引用的那个。
+也就是说：**交付包多带了 4.4 MB 死重，而不是重建缺了什么。**
 
 ---
 
-## 5. 已验证 / 未验证边界
+## 5. 实测记录（2026-11-04，本机）
+
+从空目录 `c1-clean2/` 起，严格按上面 5 步执行：
+
+| 步骤 | 结果 | 耗时 |
+|---|---|---|
+| 0 · `git clone` 本仓库 | ✅ 276 个文件，`LICENSE` 指纹与上游一致 | 3 s |
+| 0b · 把上游克隆进 `<仓库根>/source` + checkout `c8f40eab` | ✅ | 2 s |
+| 1 · `pnpm install --frozen-lockfile --ignore-scripts`（source） | ✅ 17 个 workspace 项目 | 10 s |
+| 2 · `pnpm install --frozen-lockfile`（porting/js） | ✅ | 3 s |
+| 3 · `pnpm build:all` | ✅ `dist` 41 MB | 27 s |
+| 4 · `./gradlew assembleDebug -PrequireWeb -PskipWeb` | ✅ 出包 | 109 s |
+| 5 · `check-webdist --assets` | ✅ `VERDICT: OK`，3 项指纹全等 | — |
+
+> 步骤 3 的 27 秒与主工作区曾实测的 17 分钟相差两个数量级：主工作区受 `.trash` 累积与
+> 文件系统缓存影响。**不要拿耗时当判据**，也不要因为"太快了"怀疑构建没跑——以
+> `check-webdist` 与 `dist/spa/index.html` 的存在为准。
+
+**已经闭合的边界**（此前是 ❌）：
 
 | 项 | 状态 |
 |---|---|
-| 步骤 3（`build:all`） | ✅ 多次跑通，exit 0 |
-| 步骤 4（`assembleDebug -PrequireWeb -PskipWeb`） | ✅ 多次跑通，22 秒（增量） |
-| 步骤 5（三项验证） | ✅ 在当前包上通过 |
-| 步骤 0 / 1 / 2（干净检出 + 两处 frozen install） | ❌ **未实测** |
-| 全链路从空目录一次跑到出包 | ❌ **未实测**（预计 40–60 分钟，主要耗在步骤 3） |
+| 干净检出 + 两处 fixed install（步骤 0/1/2） | ✅ 实测通过 |
+| 全链路从空目录一次跑到出包 | ✅ 实测通过（约 2.5 分钟，含克隆） |
+| 产物一致性门禁 | ✅ `VERDICT: OK` |
 
-把最后两行从 ❌ 变成 ✅，C-1 的验收判据才算真正满足。
+**仍未覆盖**：重建包没有装到真机上跑行为验收（本机设备是用户的日常机，未擅自覆盖安装）。
+若要把 C-1 的"等价"钉到行为层面，需要在设备上装一次并复跑六条启动判据。
 
 ---
 
@@ -150,7 +206,21 @@ unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E '\.map$|assets/web/
    （约 200 MB）时，clean 阶段反复尝试删除失败，`build:all` 从 17 分钟涨到 25 分钟。
    定期清空即可（它是构建缓存，不属于交付物）。
 2. **Gradle 会重复跑 JS 构建**：见步骤 4 的 `-PskipWeb=true`。
-3. **Git Bash 会改写以 `/` 开头的参数**：Windows 下 `adb shell ls /sdcard/...` 里的
-   `/sdcard` 会被改写成 `C:/Program Files/Git/sdcard`。前置 `export MSYS_NO_PATHCONV=1`。
-4. **`node_modules` 不能跨机拷贝**：`link-vendor.mjs` 建的是**目录联接**（junction /
-   symlink），绝对路径写死。换机器必须重跑步骤 1 与 2，不要拷目录。
+3. **Git Bash 的路径改写（两个方向都会出事）**：
+   - 不设 `MSYS_NO_PATHCONV`：`adb shell ls /sdcard/...` 里的 `/sdcard` 会被改成
+     `C:/Program Files/Git/sdcard`，设备上找不到。
+   - 设了 `MSYS_NO_PATHCONV=1`：`git clone <src> /c/Users/...` 会把这个 **POSIX 路径原样**
+     交给 `git.exe`，Windows 侧解析成 `C:\c\Users\...` —— clone **返回 0**，但目录建在别处，
+     后续 `cd` 才报 `No such file or directory`。
+   - 结论：**要么全用 `C:/...` 形式的 Windows 路径**（推荐，脚本里一律这么写），
+     要么只在 adb 那几条命令前临时 `export`。别把两者混在同一个脚本里。
+4. **`node_modules` 不能移动、不能跨机拷贝**：pnpm 建的是**绝对路径**符号链接
+   （实测：`view-main/node_modules/less -> /c/Users/…/c1-clean/source/node_modules/.pnpm/less@4.9.1/…`）。
+   把已 install 过的 `source/` 目录 `mv` 到别处，链接全部悬空，构建报「缺失依赖：svelte, less…」，
+   而表面上文件都还在。**必须原地 install**：先把上游克隆到最终位置，再装依赖。
+5. **没有 MSVC 时 `better-sqlite3` 编译必然失败**：见步骤 1 的 `--ignore-scripts`。
+   报错形如 `gyp ERR! find VS`，且会让整个 `pnpm install` 以 exit 1 中断。
+6. **非交互 shell 要 `CI=true`**：否则 pnpm 重建 `node_modules` 时会以
+   `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 中止。
+7. **`local.properties` 不在仓库里**：干净检出必须先设 `ANDROID_HOME`，否则 Gradle 报
+   `SDK location not found`（见步骤 4）。

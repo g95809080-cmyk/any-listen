@@ -10,7 +10,8 @@
 >
 > **分发前**：必须闭环 `docs/phase6-compliance.md` §4.2 的 C-1 ~ C-7。其中 **C-1** 的工程材料
 > 已就绪（`LICENSE` / `NOTICE` / 可 `git clone` 的源码树 / `docs/BUILD-from-source.md`），
-> 但「干净目录从零重建」这一条验收判据**尚未实测**；**C-2**（附加条款的呈现方式）仍需你书面裁决。
+> 且**干净目录从零重建已实测通过**（约 2.5 分钟出包、门禁 `VERDICT: OK`）；
+> **C-2**（附加条款的呈现方式）仍需你书面裁决。
 
 ---
 
@@ -25,8 +26,9 @@
 | `artifacts/` | 实测截图、logcat、CDP 探针脚本（**不入库**，见 `.gitignore`） | — |
 | `LICENSE` / `NOTICE` | 上游许可全文（逐字节复制）+ 移植层许可状态与修改声明 | — |
 
-> 本仓库只含**移植层**。`source/` 由使用者按 `NOTICE` §5 的地址与 commit 检出到同级目录，
-> 已被 `.gitignore` 排除 —— 因此 `git clone` 之后还需一步取上游，见 `docs/BUILD-from-source.md`。
+> 本仓库只含**移植层**。`source/` 由使用者按 `NOTICE` §5 的地址与 commit 检出到**仓库根目录内**
+> （与 `porting/` 并列），已被 `.gitignore` 排除 —— 因此 `git clone` 之后还需一步取上游，
+> 见 `docs/BUILD-from-source.md`。
 
 ## 运行形态
 

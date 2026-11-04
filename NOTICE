@@ -73,12 +73,16 @@ Any Listen for Android — 移植说明与许可声明
 按 AGPL v3 的定义，对应源码 = 生成该二进制所需的全部源码，含构建脚本与安装信息。
 
   移植层   本仓库即完整对应源码，含 `porting/js`、`porting/android` 与全部构建脚本。
-  上游     按第 2 节的仓库地址与 commit 取得，检出到与本仓库**同级**的 `source/` 目录：
+  上游     按第 2 节的仓库地址与 commit 取得，检出到**本仓库根目录内**的 `source/`
+           （与本仓库的 `porting/` 并列，不是放在仓库旁边）：
+
+               在仓库根执行：
                git clone https://github.com/any-listen/any-listen.git source
                git -C source checkout c8f40eab05021735b969e5991e6ec2f2c63e83b8
 
-           位置不是随意的：`porting/js/vite.config.mjs` 以 `../../source` 解析上游，
-           换位置必须同步改构建配置。
+           位置不是随意的：`porting/js/vite.config.mjs` 以 `ROOT/../../source` 解析上游
+           （ROOT = `porting/js`），`scripts/link-vendor.mjs` 同此基准，两者都指向
+           `<仓库根>/source`。换位置必须同步改构建配置，改完就不再是"按文档原样重建"。
 
 从零重建的完整步骤（含工具链版本与已验证/未验证的边界）见 `docs/BUILD-from-source.md`。
 

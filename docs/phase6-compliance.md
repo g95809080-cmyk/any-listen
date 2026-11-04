@@ -1067,7 +1067,7 @@ find porting/js/dist/spa/assets -type f | wc -l                # 211
 
 | 判据 | 状态 | 说明 |
 |---|---|---|
-| 干净目录从零重建出等价 APK | ❌ **未实测** | 步骤 0/1/2（取上游 + 两处 `pnpm install --frozen-lockfile`）从未在空目录跑过；预计 40–60 分钟，瓶颈在 `build:all` |
+| 干净目录从零重建出等价 APK | ✅ **已实测**（2026-11-04） | 空目录起、按 `docs/BUILD-from-source.md` 五步执行：克隆 3 s → 两处 frozen install 13 s → `build:all` 27 s → `assembleDebug` 109 s → `check-webdist --assets` = `VERDICT: OK`。出包 19,890,423 B / 345 条目 / 入口 `main.oGPa8w3b.js`。**与交付包不字节相同**（详见附录 E.4） |
 | 随包第三方 NOTICE（C-3） | ❌ 未生成 | `node-forge → BSD-3-Clause`、`dompurify → Apache-2.0` 两处选举已定，但完整清单未成文 |
 | C-2 呈现方式 | ❌ 待裁决 | 只能由用户/法务定；`NOTICE` 现采用「原样传递、不追加不减免」的事实性写法，该写法在两个候选方案下都成立 |
 | 发布到远端仓库 | ❌ 未执行 | 本地仓库已可 `git clone`；远端需要用户自己的账号与命名 |
@@ -1081,3 +1081,34 @@ find porting/js/dist/spa/assets -type f | wc -l                # 211
 
 对结论的影响：构建可复现性的阻断项只剩 **F-4（`dist/` 是单一共享可变目录，并发构建互相清空）**，
 该条已在 `docs/BUILD-from-source.md` §3 步骤 3 与 §6 中作为操作约束写明（同一时间只允许一个构建）。
+
+### E.4 干净重建实测（2026-11-04）与一个新发现
+
+执行环境：空目录 `c1-clean2/`，严格按 `docs/BUILD-from-source.md`。共用时约 2.5 分钟。
+过程中撞到 4 个**文档原先没写或写错**的点，均已回写进该文档（`--ignore-scripts`、
+`ANDROID_HOME`、`CI=true`、`source/` 必须在仓库根内而非仓库旁边）。
+
+| 项 | 交付包 | 干净重建包 |
+|---|---|---|
+| 字节数 | 24,343,888 | 19,890,423 |
+| zip 条目 | 348 | 345 |
+| 入口 | `main.CJYsJ0I6.js` | `main.oGPa8w3b.js` |
+| `check-webdist --assets` | `VERDICT: OK` | `VERDICT: OK` |
+| `emscripten-module-*.wasm`（磁盘 / 被引用） | 4 / 1 | 1 / 1 |
+
+**差异不是"重建缺东西"，而是"交付包多带了死重"。** 交付包的 `dist/spa/assets` 里有 4 个
+quickjs wasm 变体，产物只引用其中 1 个（`release-sync`，扩展沙箱用），另外 3 个（合计 4.4 MB）
+是 `shrink-assets.mjs` 该删而没删的孤儿；干净重建只留被引用的那个。两份包中
+**被引用的那个变体同名同内容**，因此扩展沙箱能力一致。
+
+登记为 **F-8（P2，构建管线）**：`shrink-assets.mjs` 的「删除未被引用的 wasm」在多轮增量构建后
+未能清掉孤儿，机制未定位（干净目录不复现）。影响仅为包体 +4.4 MB，不影响功能。
+**处置建议：发布用的包一律取干净重建产物**，或在发布前加一条
+`ls dist/spa/assets/*.wasm` 与「被引用集合」的比对断言。
+
+**另外一条不能用的判据**：包内 `main.<hash>.js` 文件名**不能**用来判断"是否同一次构建的内容"。
+本次两份包主 chunk 从第 70 字节（`__vite__mapDeps` 的懒加载分块名）起就不同，属分块哈希连锁；
+131 个不反向引用主 chunk 的分块逐字节相同。跨环境重建出现不同哈希是正常现象。
+
+**仍未覆盖**：重建包未安装到真机跑行为验收（设备是用户日常机，未擅自覆盖安装）。
+若要把「等价」钉到行为层面，需装一次并复跑六条启动判据 —— 这一步只能由用户决定何时做。
