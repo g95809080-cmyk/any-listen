@@ -43,6 +43,28 @@ function requireSqlJs(): SqlJsStatic {
 
 /** 预载：把磁盘上的 .db 读进内存，供同步的 `new Database()` 使用 */
 const preloaded = new Map<string, Uint8Array>()
+const openDatabases = new Set<Database>()
+let lifecycleRegistered = false
+
+/** 在 db worker 的原生桥接就绪后调用一次。 */
+export function registerSqliteLifecycle(): void {
+  if (lifecycleRegistered) return
+  lifecycleRegistered = true
+  const flush = () => {
+    void flushOpenDatabases().catch((error: unknown) => console.error('[sqlite] lifecycle flush failed', error))
+  }
+  ports.lifecycle.onBackground(flush)
+  ports.lifecycle.onTrimMemory(flush)
+  ports.lifecycle.onBeforeTerminate((id) => {
+    void flushOpenDatabases()
+      .then(() => ports.lifecycle.acknowledgeTermination(id, 'db'))
+      .catch((error: unknown) => console.error('[sqlite] termination flush failed', error))
+  })
+}
+
+export async function flushOpenDatabases(): Promise<void> {
+  await Promise.all([...openDatabases].map((db) => db.flushNow()))
+}
 
 export async function preloadDatabase(databasePath: string): Promise<boolean> {
   if (preloaded.has(databasePath)) return true
@@ -163,6 +185,7 @@ export default class Database {
       throw error
     }
     this.raw = bytes && bytes.length ? new SQL.Database(bytes) : new SQL.Database()
+    openDatabases.add(this)
   }
 
   prepare(sql: string): Statement {
@@ -214,6 +237,7 @@ export default class Database {
   close(): void {
     if (this.closed) return
     this.closed = true
+    openDatabases.delete(this)
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
     for (const statement of this.statements.values()) statement.free()
@@ -238,7 +262,7 @@ export default class Database {
     if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null
-      void this.flushNow()
+      void this.flushNow().catch((error: unknown) => console.error('[sqlite] scheduled flush failed', error))
     }, FLUSH_DEBOUNCE_MS)
   }
 
@@ -248,21 +272,35 @@ export default class Database {
 
   /** 强制落盘（生命周期钩子调用） */
   async flushNow(): Promise<void> {
-    if (this.closed || !this.dirty) return
-    if (this.flushing) return this.flushing
-    this.dirty = false
-    const data = this.raw.export()
-    this.flushing = ports.fs
-      .writeFileAtomic(this.name, data)
-      .catch((err: unknown) => {
+    while (!this.closed) {
+      if (this.flushing) {
+        await this.flushing
+        continue
+      }
+      if (!this.dirty) return
+      if (this.flushTimer) clearTimeout(this.flushTimer)
+      this.flushTimer = null
+      this.dirty = false
+      let data: Uint8Array
+      try {
+        data = this.raw.export()
+      } catch (error) {
         this.dirty = true
-        console.error('[sqlite] flush failed', err)
-        throw err
-      })
-      .finally(() => {
-        this.flushing = null
-      })
-    return this.flushing
+        throw error
+      }
+      this.flushing = ports.fs
+        .writeFileAtomic(this.name, data)
+        .catch((error: unknown) => {
+          this.dirty = true
+          console.error('[sqlite] flush failed', error)
+          throw error
+        })
+        .finally(() => {
+          this.flushing = null
+        })
+      await this.flushing
+      // 写盘期间可能有新写入；等当前写盘完成后再刷一次。
+    }
   }
 }
 

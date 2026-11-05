@@ -2,12 +2,14 @@
 <!--
   默认（严格）网络安全配置。
 
-  只有回环地址允许明文：
+  回环地址始终允许明文：
   - WebView 与 `fetch` 都从 http://127.0.0.1:17930 取 SPA/接口，这是同源前提；
   - `AudioWorklet` / `AudioContext` 的 `createMediaElementSource` 要求**安全上下文**，
     `file://` 与 `asset://` 都不满足，只有 `localhost` / `127.0.0.1` 算 secure context。
 
-  其余域名一律禁止明文：在线音源、插件源、封面都必须走 https。
+  另外逐域名放行内置「Online Metadata 0.4.8」仍硬编码为 http 的音乐接口与封面 CDN，共 34 个主机。
+  这些是扩展实际使用的完整主机名，**没有通配符、没有 includeSubdomains**；扩展升级后
+  必须重新核对清单。除此之外的域名一律禁止明文：在线音源、插件源、封面都必须走 https。
   如果用户确实需要 http 音源（自建服务、老 WebDAV），两条路：
   1. 在下面加一条 `<domain-config cleartextTrafficPermitted="true">` 把**具体域名**放进去
      （不要 includeSubdomains，也不要写通配）；
@@ -27,5 +29,43 @@
   <domain-config cleartextTrafficPermitted="true">
     <domain includeSubdomains="false">127.0.0.1</domain>
     <domain includeSubdomains="false">localhost</domain>
+  </domain-config>
+
+  <!-- Online Metadata 0.4.8：搜索、歌词、封面、歌单、评论仍使用这些 http 端点。 -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">artistpicserver.kuwo.cn</domain>
+    <domain includeSubdomains="false">c.y.qq.com</domain>
+    <domain includeSubdomains="false">comment.service.kugou.com</domain>
+    <domain includeSubdomains="false">d.musicapp.migu.cn</domain>
+    <domain includeSubdomains="false">everydayrec.service.kugou.com</domain>
+    <domain includeSubdomains="false">gateway.kugou.com</domain>
+    <domain includeSubdomains="false">hotword.kuwo.cn</domain>
+    <domain includeSubdomains="false">img1.kwcdn.kuwo.cn</domain>
+    <domain includeSubdomains="false">img2.kwcdn.kuwo.cn</domain>
+    <domain includeSubdomains="false">img3.kwcdn.kuwo.cn</domain>
+    <domain includeSubdomains="false">img4.kwcdn.kuwo.cn</domain>
+    <domain includeSubdomains="false">imge.kugou.com</domain>
+    <domain includeSubdomains="false">interface.music.163.com</domain>
+    <domain includeSubdomains="false">jadeite.migu.cn</domain>
+    <domain includeSubdomains="false">lyrics.kugou.com</domain>
+    <domain includeSubdomains="false">m.comment.service.kugou.com</domain>
+    <domain includeSubdomains="false">m.kugou.com</domain>
+    <domain includeSubdomains="false">media.store.kugou.com</domain>
+    <domain includeSubdomains="false">mlyric.kuwo.cn</domain>
+    <domain includeSubdomains="false">mobilecdnbj.kugou.com</domain>
+    <domain includeSubdomains="false">mobileinterfaces.kuwo.cn</domain>
+    <domain includeSubdomains="false">msearchretry.kugou.com</domain>
+    <domain includeSubdomains="false">ncomment.kuwo.cn</domain>
+    <domain includeSubdomains="false">nplserver.kuwo.cn</domain>
+    <domain includeSubdomains="false">pubsongscdn.tx.kugou.com</domain>
+    <domain includeSubdomains="false">qukudata.kuwo.cn</domain>
+    <domain includeSubdomains="false">search.kuwo.cn</domain>
+    <domain includeSubdomains="false">t.kugou.com</domain>
+    <domain includeSubdomains="false">wapi.kuwo.cn</domain>
+    <domain includeSubdomains="false">www.kugou.com</domain>
+    <domain includeSubdomains="false">www.kuwo.cn</domain>
+    <domain includeSubdomains="false">www2.kugou.kugou.com</domain>
+    <domain includeSubdomains="false">y.gtimg.cn</domain>
+    <domain includeSubdomains="false">y.qq.com</domain>
   </domain-config>
 </network-security-config>

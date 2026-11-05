@@ -315,6 +315,9 @@ function createLifecyclePort(): LifecyclePort {
         logSubscribeError('lifecycle.onBeforeTerminate')
       )
     },
+    acknowledgeTermination(id, source) {
+      return callPort('lifecycle.acknowledgeTermination', [id, source])
+    },
     isInForeground() {
       // 本地缓存：Kotlin 侧的 `lifecycle.isInForeground()` 是异步的，而上游调用点是同步的
       ensureSubscribed()

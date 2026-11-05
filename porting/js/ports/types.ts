@@ -285,7 +285,8 @@ export interface LifecyclePort {
   onBackground(cb: () => void): void
   onForeground(cb: () => void): void
   onTrimMemory(cb: (level: number) => void): void
-  onBeforeTerminate(cb: () => void): void
+  onBeforeTerminate(cb: (id: string) => void): void
+  acknowledgeTermination(id: string, source: string): Promise<void>
   isInForeground(): boolean
 }
 

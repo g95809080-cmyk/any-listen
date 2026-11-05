@@ -53,7 +53,7 @@ import { DB_NAME } from '@any-listen/common/constants'
 
 import '../shims/globals'
 
-import { initSqlite, preloadDatabase } from '../ports/sqlite'
+import { initSqlite, preloadDatabase, registerSqliteLifecycle } from '../ports/sqlite'
 import { setBeforeExpose } from '../host/worker/expose'
 
 import '@any-listen/app/modules/worker/dbService/index'
@@ -81,6 +81,7 @@ function requireFn<T>(value: unknown, name: string): T {
 }
 
 setBeforeExpose(async (obj) => {
+  registerSqliteLifecycle()
   const initFn = requireFn<DbInit>(obj.init, 'init')
   const backupFn = requireFn<DbBackup>(obj.backupDB, 'backupDB')
 

@@ -11,9 +11,7 @@
  *    由 `initVmShim()` 预加载（`getQuickJS()` 是 async）。
  * 2. **超时**：`timeout` 用 `runtime.setInterruptHandler` 实现（QuickJS 无 V8 的任意指令中止能力，
  *    但中断处理器在字节码边界生效，实测可中断死循环）。
- * 3. **值编解码**：跨边界只允许 primitive / Uint8Array（Phase 2 实测 14 个 host 函数全部如此）。
- *    实现用 QuickJS 侧的一小段 base64 编解码器做 marshal，避免依赖 `getArrayBuffer` 的
- *    内部布局（已实测 `dump()` 会把 Uint8Array 摊平成普通对象，不可用）。
+ * 3. **值编解码**：message2call 使用嵌套数组与对象，二进制使用 base64 保留类型。
  */
 
 import { getQuickJS, getQuickJSSync, type QuickJSRuntime, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
@@ -35,8 +33,12 @@ interface VmContextState {
   toHost: QuickJSHandle
   fromHost: QuickJSHandle
   globals: Map<string, QuickJSHandle>
+  objects: Map<string, { handle: QuickJSHandle; proxy: object }>
   disposed: boolean
   timeoutDeadline: number
+  executionDepth: number
+  drainingJobs: boolean
+  jobTimer: ReturnType<typeof setTimeout> | null
 }
 
 export interface VmContext {
@@ -92,6 +94,15 @@ const MARSHAL_SOURCE = String.raw`
     }
     return bytes
   }
+  function replaceBinary(key, value) {
+    var original = this[key]
+    return original instanceof Uint8Array ? { __anylisten_vm_bytes__: encode(original) } : value
+  }
+  function reviveBinary(key, value) {
+    if (value && typeof value === 'object' && Object.keys(value).length === 1 &&
+        typeof value.__anylisten_vm_bytes__ === 'string') return decode(value.__anylisten_vm_bytes__)
+    return value
+  }
   return {
     toHost: function (v) {
       if (v === undefined) return ['u', null]
@@ -101,7 +112,7 @@ const MARSHAL_SOURCE = String.raw`
       if (t === 'number') return ['d', v]
       if (t === 'boolean') return ['b', v]
       if (v instanceof Uint8Array) return ['y', encode(v)]
-      try { return ['j', JSON.stringify(v)] } catch (e) { return ['s', String(v)] }
+      try { return ['j', JSON.stringify(v, replaceBinary)] } catch (e) { return ['s', String(v)] }
     },
     fromHost: function (tag, payload) {
       switch (tag) {
@@ -111,6 +122,7 @@ const MARSHAL_SOURCE = String.raw`
         case 'd': return payload
         case 'b': return payload
         case 'y': return decode(payload)
+        case 'j': return JSON.parse(payload, reviveBinary)
         default: return payload
       }
     }
@@ -148,6 +160,30 @@ function stateOf(context: VmContext): VmContextState {
   return state
 }
 
+function drainPendingJobs(state: VmContextState): void {
+  if (state.disposed || state.drainingJobs || state.executionDepth > 0) return
+  state.drainingJobs = true
+  const deadline = Date.now() + 5_000
+  state.runtime.setInterruptHandler(() => Date.now() > deadline)
+  try {
+    const result = state.runtime.executePendingJobs(1_000)
+    if (result.error) {
+      const error = state.context.dump(result.error)
+      result.error.dispose()
+      throw new Error(`vm: pending job failed: ${JSON.stringify(error)}`)
+    }
+    if (state.runtime.hasPendingJob() && !state.jobTimer) {
+      state.jobTimer = setTimeout(() => {
+        state.jobTimer = null
+        try { drainPendingJobs(state) } catch (error) { console.error(error) }
+      }, 0)
+    }
+  } finally {
+    state.runtime.setInterruptHandler(() => false)
+    state.drainingJobs = false
+  }
+}
+
 function jsToHandle(ctx: QuickJSContext, value: VmPrimitive): QuickJSHandle {
   if (value === undefined) return ctx.undefined
   if (value === null) return ctx.null
@@ -159,7 +195,7 @@ function jsToHandle(ctx: QuickJSContext, value: VmPrimitive): QuickJSHandle {
   return ctx.newArrayBuffer(copy.buffer)
 }
 
-function handleToJs(state: VmContextState, handle: QuickJSHandle): VmPrimitive {
+function handleToJs(state: VmContextState, handle: QuickJSHandle): unknown {
   const { context } = state
   const result = context.callFunction(state.toHost, context.undefined, [handle])
   if (!('value' in result)) {
@@ -183,13 +219,19 @@ function handleToJs(state: VmContextState, handle: QuickJSHandle): VmPrimitive {
     case 'y':
       return Buffer.from(String(payload), 'base64')
     case 'j':
-      return payload as VmPrimitive
+      return JSON.parse(String(payload), (_key, value: unknown) => {
+        if (value && typeof value === 'object' && Object.keys(value).length === 1 &&
+            typeof (value as Record<string, unknown>).__anylisten_vm_bytes__ === 'string') {
+          return Buffer.from((value as { __anylisten_vm_bytes__: string }).__anylisten_vm_bytes__, 'base64')
+        }
+        return value
+      }) as unknown
     default:
       return undefined
   }
 }
 
-function primitiveToSandbox(state: VmContextState, value: VmPrimitive): QuickJSHandle {
+function primitiveToSandbox(state: VmContextState, value: unknown): QuickJSHandle {
   const { context } = state
   const tag =
     value === undefined
@@ -202,9 +244,19 @@ function primitiveToSandbox(state: VmContextState, value: VmPrimitive): QuickJSH
             ? 'd'
             : typeof value === 'boolean'
               ? 'b'
-              : 'y'
-  const payload =
-    tag === 'y' ? Buffer.from((value as Uint8Array).buffer, (value as Uint8Array).byteOffset, (value as Uint8Array).byteLength).toString('base64') : value
+            : value instanceof Uint8Array
+              ? 'y'
+              : 'j'
+  const payload = tag === 'y'
+    ? Buffer.from((value as Uint8Array).buffer, (value as Uint8Array).byteOffset, (value as Uint8Array).byteLength).toString('base64')
+    : tag === 'j'
+      ? JSON.stringify(value, function (this: Record<string, unknown>, key, item: unknown) {
+          const original = this[key]
+          return original instanceof Uint8Array
+            ? { __anylisten_vm_bytes__: Buffer.from(original.buffer, original.byteOffset, original.byteLength).toString('base64') }
+            : item
+        })
+      : value
 
   const args = [
     tag === 'u' || tag === 'n' ? context.newString(tag) : jsToHandle(context, tag as VmPrimitive),
@@ -219,6 +271,58 @@ function primitiveToSandbox(state: VmContextState, value: VmPrimitive): QuickJSH
     throw new Error(`vm: unmarshal failed: ${JSON.stringify(message)}`)
   }
   return result.value
+}
+
+function hostFunction(state: VmContextState, name: string, fn: (...args: unknown[]) => unknown): QuickJSHandle {
+  const { context } = state
+  return context.newFunction(name, (...argHandles) => {
+    const args = argHandles.map((handle) => handleToJs(state, handle))
+    try {
+      const output = fn(...args)
+      return output === undefined ? undefined : primitiveToSandbox(state, output)
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err))
+      return context.newString(`__host_error__:${error.name}:${error.message}`)
+    }
+  })
+}
+
+function callSandbox(state: VmContextState, fn: QuickJSHandle, receiver: QuickJSHandle, args: unknown[], name: string): unknown {
+  const handles: QuickJSHandle[] = []
+  state.executionDepth += 1
+  try {
+    for (const arg of args) handles.push(primitiveToSandbox(state, arg))
+    const result = state.context.callFunction(fn, receiver, handles)
+    if (!('value' in result)) {
+      const message = state.context.dump(result.error)
+      result.error.dispose()
+      throw new Error(`vm: ${name}() failed: ${JSON.stringify(message)}`)
+    }
+    try { return handleToJs(state, result.value) } finally { result.value.dispose() }
+  } finally {
+    for (const handle of handles) handle.dispose()
+    state.executionDepth -= 1
+    drainPendingJobs(state)
+  }
+}
+
+function sandboxObject(state: VmContextState, object: QuickJSHandle): object {
+  return new Proxy({}, {
+    get(_target, prop) {
+      if (typeof prop !== 'string' || state.disposed) return undefined
+      const value = state.context.getProp(object, prop)
+      const isFunction = state.context.typeof(value) === 'function'
+      if (!isFunction) {
+        try { return handleToJs(state, value) } finally { value.dispose() }
+      }
+      value.dispose()
+      return (...args: unknown[]) => {
+        if (state.disposed) throw new Error('vm: context has been disposed')
+        const fn = state.context.getProp(object, prop)
+        try { return callSandbox(state, fn, object, args, prop) } finally { fn.dispose() }
+      }
+    },
+  })
 }
 
 export function createContext(sandbox: Record<string, unknown> = {}, options: CreateContextOptions = {}): VmContext {
@@ -240,29 +344,32 @@ export function createContext(sandbox: Record<string, unknown> = {}, options: Cr
     toHost,
     fromHost,
     globals: new Map(),
+    objects: new Map(),
     disposed: false,
     timeoutDeadline: 0,
+    executionDepth: 0,
+    drainingJobs: false,
+    jobTimer: null,
   }
 
   for (const [name, value] of Object.entries(sandbox)) {
     if (typeof value === 'function') {
-      const fn = context.newFunction(name, (...argHandles) => {
-        const args: VmPrimitive[] = argHandles.map((handle) => handleToJs(state, handle))
-        let output: unknown
-        try {
-          output = (value as (...a: VmPrimitive[]) => unknown)(...args)
-        } catch (err) {
-          const error = err instanceof Error ? err : new Error(String(err))
-          return context.newString(`__host_error__:${error.name}:${error.message}`)
-        }
-        if (output === undefined) return undefined
-        return primitiveToSandbox(state, output as VmPrimitive)
-      })
+      const fn = hostFunction(state, name, value as (...args: unknown[]) => unknown)
       context.setProp(context.global, name, fn)
       fn.dispose()
       continue
     }
-    const handle = jsToHandle(context, value as VmPrimitive)
+    let handle: QuickJSHandle
+    if (value && typeof value === 'object' && Object.values(value).some((item) => typeof item === 'function')) {
+      handle = context.newObject()
+      for (const [key, item] of Object.entries(value)) {
+        const child = typeof item === 'function'
+          ? hostFunction(state, key, item.bind(value) as (...args: unknown[]) => unknown)
+          : primitiveToSandbox(state, item)
+        context.setProp(handle, key, child)
+        child.dispose()
+      }
+    } else handle = primitiveToSandbox(state, value)
     context.setProp(context.global, name, handle)
     handle.dispose()
   }
@@ -283,28 +390,30 @@ export function createContext(sandbox: Record<string, unknown> = {}, options: Cr
       get(_target, prop, receiver) {
         if (prop === CONTEXT_TAG) return state
         if (typeof prop !== 'string') return Reflect.get(_target, prop, receiver)
+        const object = state.objects.get(prop)
+        if (object) return object.proxy
         const cached = state.globals.get(prop)
         if (cached) {
           if (state.disposed) return undefined
-          return (...args: VmPrimitive[]) => {
-            const handles = args.map((arg) => (arg instanceof Uint8Array ? primitiveToSandbox(state, arg) : jsToHandle(state.context, arg)))
-            const result = state.context.callFunction(cached, state.context.undefined, handles)
-            for (const handle of handles) handle.dispose()
-            if (!('value' in result)) {
-              const message = state.context.dump(result.error)
-              result.error.dispose()
-              throw new Error(`vm: ${prop}() failed: ${JSON.stringify(message)}`)
-            }
-            const value = handleToJs(state, result.value)
-            result.value.dispose()
-            return value
-          }
+          return (...args: unknown[]) => callSandbox(state, cached, state.context.undefined, args, prop)
         }
         const handle = state.context.getProp(state.context.global, prop)
-        if (state.context.typeof(handle) !== 'function') {
-          const value = state.context.dump(handle)
-          handle.dispose()
-          return value
+        const type = state.context.typeof(handle)
+        if (type === 'object' && state.context.dump(handle) !== null) {
+          const names = state.context.unwrapResult(state.context.getOwnPropertyNames(handle))
+          const hasMethods = names.some((key) => {
+            const child = state.context.getProp(handle, key)
+            try { return state.context.typeof(child) === 'function' } finally { child.dispose() }
+          })
+          names.dispose()
+          if (hasMethods) {
+            const objectProxy = sandboxObject(state, handle)
+            state.objects.set(prop, { handle, proxy: objectProxy })
+            return objectProxy
+          }
+        }
+        if (type !== 'function') {
+          try { return handleToJs(state, handle) } finally { handle.dispose() }
         }
         state.globals.set(prop, handle)
         return proxy[prop as never]
@@ -317,6 +426,7 @@ export function createContext(sandbox: Record<string, unknown> = {}, options: Cr
 
 export function runInContext(code: string, context: VmContext, options: RunInContextOptions = {}): unknown {
   const state = stateOf(context)
+  state.executionDepth += 1
   const timeout = options.timeout ?? 0
   if (timeout > 0) {
     state.timeoutDeadline = Date.now() + timeout
@@ -340,6 +450,8 @@ export function runInContext(code: string, context: VmContext, options: RunInCon
     return value
   } finally {
     state.runtime.setInterruptHandler(() => false)
+    state.executionDepth -= 1
+    drainPendingJobs(state)
   }
 }
 
@@ -351,8 +463,11 @@ export function destroyContext(context: VmContext): void {
   const state = (context as unknown as Record<symbol, VmContextState | undefined>)[CONTEXT_TAG]
   if (!state || state.disposed) return
   state.disposed = true
+  if (state.jobTimer) clearTimeout(state.jobTimer)
   for (const handle of state.globals.values()) handle.dispose()
   state.globals.clear()
+  for (const object of state.objects.values()) object.handle.dispose()
+  state.objects.clear()
   state.toHost.dispose()
   state.fromHost.dispose()
   state.context.dispose()

@@ -20,15 +20,18 @@
  */
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { join, dirname, basename } from 'node:path'
+import { join, dirname, basename, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
 const checkAssets = process.argv.includes('--assets')
+const distArg = process.argv.find((arg) => arg.startsWith('--dist='))
+if (distArg === '--dist=') throw new Error('--dist 不能为空')
+const distDir = distArg ? resolve(root, distArg.slice('--dist='.length)) : join(root, '../js/dist')
 const spaDir = checkAssets
   ? join(root, 'app/src/main/assets/web/spa')
-  : join(root, '../js/dist/spa')
+  : join(distDir, 'spa')
 
 const WORKER_RE = /[A-Za-z0-9_$][A-Za-z0-9_$.-]*worker-[A-Za-z0-9_-]{8}\.js/g
 const PRELOAD_REL = 'extension-preload/extension-preload.js'
@@ -146,7 +149,7 @@ const bad = missingEntries.length > 0 || missingWorkers.length > 0 || missingPre
  * 注意：`--assets` 模式下这段仍然跑，且**默认开启**（没有开关关它）——
  * 门禁的价值就在于"不需要有人记得打开它"。
  * ========================================================================== */
-const DIST_SPA = join(root, '../js/dist/spa')
+const DIST_SPA = join(distDir, 'spa')
 const ASSETS_SPA = join(root, 'app/src/main/assets/web/spa')
 
 const preloadCandidatesFor = (spa) => [

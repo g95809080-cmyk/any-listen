@@ -457,7 +457,8 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
 | 域 | 明文 | 原因 |
 |----|------|------|
 | `127.0.0.1` / `localhost` | 允许 | 本地回环服务（SPA + `/stream` + 代理），且 `AudioWorklet` / `createMediaElementSource` 要求 secure context —— `file://` 与 `asset://` 都不满足，只有 localhost 算安全上下文 |
-| 其他全部 | **禁止** | 在线音源/插件源/封面必须 https |
+| `Online Metadata 0.4.8` 的 34 个精确主机 | 允许 | 内置酷我 / 网易 / 酷狗 / QQ 音乐 / 咪咕的搜索、歌词、封面、歌单与评论仍硬编码为 http；逐域名放行，全部 `includeSubdomains="false"`，没有通配符 |
+| 其他全部 | **禁止** | 在线音源/插件源/封面默认必须 https；`http://example.com/` 实测仍被拒绝 |
 
 ⚠️ **这条策略对 OkHttp 同样生效**（`NetworkSecurityPolicy` 在连接前检查），所以"原生代发 http 请求"也会被拦，不是只影响 WebView。`/p_url` 代理对 http 源站一样会失败。
 
@@ -546,10 +547,11 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
 8. **APK 里有约 4 MB 的 worker 重复 chunk**。`vite` 的每个 Web Worker 都是独立 rollup 构建，主图与 worker 图会各自 emit 一份内容相同的共享 chunk（`core-*`/`index-*`/各 parser）。Vite 正常行为，要瘦身得 JS 侧做「同内容去重 + 引用改写」；原生侧不改 hash 引用（改了必然 404）。
 9. **`backgroundAudio` 能力标记为 `"unverified"`**。后台音频能否在目标机型上稳定存活（厂商省电策略差异大）没实测，不敢先写 `true` 让前端乐观分支。
 10. **`listTree` 大目录性能未压测**。已按「原生递归 + 500 条一批 + 逐批可取消」实现（1 万首歌不再 2 万次往返），但真实曲库规模下的耗时与内存占用尚无基准数据。
-11. **明文流量已收口，但在线音源需要 `domain-config` 白名单**。`usesCleartextTraffic="true"` 已删除，
-    默认只放行 `127.0.0.1` / `localhost`，其余域名一律禁明文（含 OkHttp 请求）。已知的 `http://` 在线音源
-    要在 `app/src/main/res/xml/network_security_config.xml` 的 `domain-config` 里逐个加，没有兜底开关 ——
-    临时排查可用 `-PallowCleartext=true` 切到 `_loose.xml`（全放行，**不要进发布包**）。详见 §4。
+11. **明文流量按扩展实际域名精确放行**。`usesCleartextTraffic="true"` 已删除，默认只放行
+    `127.0.0.1` / `localhost` 和 `Online Metadata 0.4.8` 实际使用的 34 个主机名；其余域名一律禁明文
+    （含 OkHttp 请求）。这 34 项全部在 `app/src/main/res/xml/network_security_config.xml` 里逐条列出，
+    没有通配符、没有 `includeSubdomains`，也没有兜底开关。扩展升级后要重新核对端点；临时排查可用
+    `-PallowCleartext=true` 切到 `_loose.xml`（全放行，**不要进发布包**）。详见 §4。
 12. **构建脚本的 `logger` 消息一律用英文**。Windows 控制台默认 GBK，中文日志在 `--console=plain` 下会变成 `������`，排障时反而看不出问题。源码注释与文档仍用中文。
 13. **原生构建不能与 `pnpm build:all` 并发**。`syncWebAssets` 是 `Sync` 语义，会把 `assets/web/spa` 对齐到**当前** `dist`；
     JS 侧 `clean:spa` 刚删完目录时构建，就会把占位 SPA 写进 assets，得到「体积小得可疑」的白屏包（实测 release 988 KB）。

@@ -29,8 +29,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
-import com.anylisten.bridge.AndroidBridge
-import com.anylisten.bridge.FrameSender
 import com.anylisten.ports.PortErrorCode
 import com.anylisten.ports.PortException
 import com.anylisten.ports.fs.DirPickResult
@@ -63,8 +61,7 @@ class MainActivity : ComponentActivity() {
   private lateinit var rootLayout: FrameLayout
   private lateinit var errorView: TextView
 
-  /** 桥在进程内只建一份（`ensureBridge()`），重建 WebView 时复用它 */
-  private var bridgeRef: AndroidBridge? = null
+  private lateinit var runtime: WebPlaybackRuntime
 
   private var lastBackAt = 0L
 
@@ -213,6 +210,12 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    val retainedRuntime = AppGraph.takeBackgroundRuntime()
+    // 全新页面会重新订阅；接回后台页面时保留原来的回调。
+    if (retainedRuntime == null) {
+      registry.lifecycle.clear()
+      registry.mediaSession.clearControlListeners()
+    }
     AppGraph.currentActivity = WeakReference(this)
     WindowCompat.setDecorFitsSystemWindows(window, false)
 
@@ -233,7 +236,11 @@ class MainActivity : ComponentActivity() {
     )
     setContentView(rootLayout)
 
-    webView = createWebView()
+    runtime = retainedRuntime ?: WebPlaybackRuntime(this)
+    runtime.attachContext(this)
+    val retainedView = runtime.webView
+    webView = retainedView ?: createWebView()
+    if (retainedView != null) configureWebView(retainedView)
     rootLayout.addView(
       webView,
       0,
@@ -248,7 +255,7 @@ class MainActivity : ComponentActivity() {
     bindPortsToActivity()
     setupBackHandling()
     requestCorePermissions()
-    loadApp()
+    if (retainedView == null) loadApp()
   }
 
   override fun onStart() {
@@ -284,14 +291,28 @@ class MainActivity : ComponentActivity() {
   }
 
   override fun onDestroy() {
-    // beforeTerminate 要在 WebView 还活着时推，否则帧发不出去
-    registry.lifecycle.dispatchBeforeTerminate()
-    if (AppGraph.currentActivity?.get() === this) AppGraph.currentActivity = null
+    val ownsBindings = AppGraph.currentActivity?.get() === this
+    val keepPlaying = ownsBindings && registry.mediaSession.snapshot().isPlaying && AppGraph.playbackService != null
+    if (ownsBindings) {
+      AppGraph.currentActivity = null
+    }
+    pendingDirPick?.cancel()
+    pendingOpenDoc?.cancel()
+    pendingSaveDoc?.cancel()
+    pendingSaveSource = null
     webViewAttached = false
-    runCatching {
-      rootLayout.removeView(webView)
-      webView.stopLoading()
-      webView.destroy()
+    if (ownsBindings && !keepPlaying) {
+      AppGraph.stopWebPlayback()
+      registry.mediaSession.clearControlListeners()
+    }
+    if (ownsBindings) {
+      registry.bindUiPorts(null, null, AppGraph.foregroundServiceController)
+    }
+    rootLayout.removeView(webView)
+    when {
+      keepPlaying -> AppGraph.keepBackgroundRuntime(runtime)
+      ownsBindings -> AppGraph.retireRuntime(runtime)
+      else -> runtime.destroy()
     }
     super.onDestroy()
   }
@@ -312,9 +333,10 @@ class MainActivity : ComponentActivity() {
    * 避免"初建"和"重建"两套配置慢慢漂移 —— 这正是 D-31 修完之后最容易回归的地方。
    */
   private fun createWebView(): WebView {
-    val wv = WebView(this)
+    val wv = WebView(runtime.contextWrapper)
     configureWebView(wv)
-    wv.addJavascriptInterface(ensureBridge(), JS_INTERFACE_NAME)
+    wv.addJavascriptInterface(runtime.bridge, JS_INTERFACE_NAME)
+    runtime.installView(wv)
     return wv
   }
 
@@ -428,8 +450,7 @@ class MainActivity : ComponentActivity() {
    *
    * 同时清掉 `lifecycle` 的订阅：那四个列表是"注册即追加"的，JS 每次重载都会再注册一遍，
    * 不清就会按"重建次数"线性叠加（`onBeforeTerminate` 里的 DB flush 被调 N 次）。
-   * 其余订阅（mediaSession / audio focus / theme）的回调名是每页随机生成的，
-   * 旧名字在新页面里查不到，桥接层直接 `console.warn` 丢弃，不会重复触发业务逻辑 —— 故不在此清理。
+   * 媒体控制回调也随页面失效，重建时一起清除，避免旧页面回调残留。
    */
   private fun rebuildWebView(reason: String) {
     if (isFinishing || isDestroyed) return
@@ -438,6 +459,8 @@ class MainActivity : ComponentActivity() {
     Log.w(TAG, "rebuildWebView: $reason")
 
     webViewAttached = false
+    AppGraph.stopWebPlayback()
+    runtime.installView(null)
     runCatching {
       rootLayout.removeView(webView)
       webView.stopLoading()
@@ -445,6 +468,7 @@ class MainActivity : ComponentActivity() {
     }.onFailure { Log.w(TAG, "destroy of the dead webview failed: ${it.message}") }
 
     registry.lifecycle.clear()
+    registry.mediaSession.clearControlListeners()
     lastInsetTopPx = -1f
     lastInsetBottomPx = -1f
 
@@ -489,71 +513,45 @@ class MainActivity : ComponentActivity() {
     reloadTimestamps.addLast(now)
     Log.w(TAG, "recoverPage: $reason (${reloadTimestamps.size}/$MAX_RELOADS_PER_WINDOW)")
     errorView.visibility = View.GONE
-    webView.postDelayed({ if (webViewAttached) loadApp() }, RELOAD_DELAY_MS)
-  }
-
-  /**
-   * 桥只建一次：`AndroidBridge` 的模块注册、协程作用域都是进程级的。
-   *
-   * `sender` 内部引用的是 `webView` **字段**而不是某个具体实例 —— 重建后字段指向新实例，
-   * 帧自然发到新页面；`webViewAttached` 挡掉重建窗口内的在途帧（此时调 evaluateJavascript
-   * 会抛），这类帧本来也没有接收方（旧页面已经没了）。
-   */
-  private fun ensureBridge(): AndroidBridge {
-    bridgeRef?.let { return it }
-    val created = AndroidBridge(
-      registry = registry,
-      tokenProvider = { AppGraph.token },
-      debugEnabled = BuildConfig.DEBUG,
-      sender = FrameSender { frameJson ->
-        // 回到主线程；用 JSON 字面量注入，避免帧内的引号破坏 evaluateJavascript。
-        // 函数名是**硬约定**：`porting/js/ports/bridge-client.ts` 的
-        // `installBridgeReceiver()` 挂的就是 `window.__anylisten_bridge_recv__`，改了两边都收不到。
-        runOnUiThread {
-          if (!webViewAttached) return@runOnUiThread
-          val literal = org.json.JSONObject.quote(frameJson)
-          runCatching {
-            webView.evaluateJavascript(
-              "window.__anylisten_bridge_recv__ && window.__anylisten_bridge_recv__($literal)",
-              null,
-            )
-          }.onFailure { Log.w(TAG, "frame drop: ${it.message}") }
-        }
-      },
-    )
-    bridgeRef = created
-    Log.i(TAG, "bridge installed, modules=${created.registeredModules()}")
-    return created
+    webView.postDelayed({
+      if (webViewAttached) {
+        // 重新导航会销毁原页面及其 worker，旧回调不能继续留在原生端。
+        AppGraph.stopWebPlayback()
+        registry.lifecycle.clear()
+        registry.mediaSession.clearControlListeners()
+        loadApp()
+      }
+    }, RELOAD_DELAY_MS)
   }
 
   private fun bindPortsToActivity() {
     registry.bindUiPorts(
       directoryPicker = object : DirectoryPicker {
-        override suspend fun pickDirectory(title: String?): DirPickResult? {
+        override suspend fun pickDirectory(title: String?): DirPickResult? = withContext(Dispatchers.Main.immediate) {
           val deferred = CompletableDeferred<DirPickResult?>()
           pendingDirPick = deferred
           pickDirectoryLauncher.launch(null)
-          return deferred.await()
+          deferred.await()
         }
       },
       documentPicker = object : DocumentPicker {
-        override suspend fun openDocument(mime: List<String>): PickedDocument? {
+        override suspend fun openDocument(mime: List<String>): PickedDocument? = withContext(Dispatchers.Main.immediate) {
           val deferred = CompletableDeferred<PickedDocument?>()
           pendingOpenDoc = deferred
           openDocumentLauncher.launch(mime.toTypedArray())
-          return deferred.await()
+          deferred.await()
         }
 
         override suspend fun saveDocument(
           suggestName: String,
           mime: String,
           source: SaveSource?,
-        ): PickedDocument? {
+        ): PickedDocument? = withContext(Dispatchers.Main.immediate) {
           if (source == null) {
             // 兼容旧调用（没给内容）：只在私有 exports 目录占一个路径，由调用方自己后续写入。
             // 新代码不要走这条 —— 返回值里 written=false 就是提示。
             val dir = File(filesDir, "exports").apply { if (!exists()) mkdirs() }
-            return PickedDocument(File(dir, suggestName).absolutePath, suggestName, written = false)
+            return@withContext PickedDocument(File(dir, suggestName).absolutePath, suggestName, written = false)
           }
           val deferred = CompletableDeferred<PickedDocument?>()
           pendingSaveDoc = deferred
@@ -567,18 +565,10 @@ class MainActivity : ComponentActivity() {
               putExtra(Intent.EXTRA_TITLE, suggestName)
             },
           )
-          return deferred.await()
+          deferred.await()
         }
       },
-      foregroundServiceController = object : com.anylisten.ports.power.ForegroundServiceController {
-        override fun start(action: String) {
-          PlaybackService.start(this@MainActivity, action)
-        }
-
-        override fun stop() {
-          stopService(Intent(this@MainActivity, PlaybackService::class.java))
-        }
-      },
+      foregroundServiceController = AppGraph.foregroundServiceController,
     )
   }
 

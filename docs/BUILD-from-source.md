@@ -3,8 +3,7 @@
 > 这份文档的唯一目的：**让第三方拿到源码后，能独立重建出等价的 APK**。
 > 它是合规条件 C-1 的验收判据（见 `docs/phase6-compliance.md` §4.2）。
 >
-> **当前状态**：本文件描述的步骤在「已装好依赖的工作区」里反复跑通；但**干净目录从零
-> 走一遍尚未执行**。这是 C-1 目前唯一未闭合的验收项 —— 不要把它当成已签字的结论。
+> **当前状态**：§5 记录了先前版本的干净目录重建；2026-11-04 最新修改已在现有工作区构建和验证，尚未重新执行干净目录重建。
 
 ---
 
@@ -50,7 +49,7 @@ any-listen-android/            ← 本仓库（git clone 得到的目录）
 ### 步骤 0 · 取上游（固定 commit）
 
 ```bash
-cd <父目录>
+cd <仓库根>
 git clone https://github.com/any-listen/any-listen.git source
 git -C source checkout c8f40eab05021735b969e5991e6ec2f2c63e83b8
 ```
@@ -195,7 +194,7 @@ grep -rhoE "assets/emscripten-module-[A-Za-z0-9_-]+\.wasm" dist | sort -u
 | 全链路从空目录一次跑到出包 | ✅ 实测通过（约 2.5 分钟，含克隆） |
 | 产物一致性门禁 | ✅ `VERDICT: OK` |
 
-**仍未覆盖**：无。重建包已装到真机（Xiaomi 2211133C / Android 16）复跑六条启动判据：
+**当时的重建包**已装到真机（Xiaomi 2211133C / Android 16）复跑六条启动判据：
 `Displayed +745 ms`、`bootstrap → core worker ready` 326 ms、0 崩溃、0 备份失败、曲库真实渲染。
 明细见 `docs/phase6-compliance.md` 附录 E.5。
 
@@ -225,3 +224,38 @@ grep -rhoE "assets/emscripten-module-[A-Za-z0-9_-]+\.wasm" dist | sort -u
    `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 中止。
 7. **`local.properties` 不在仓库里**：干净检出必须先设 `ANDROID_HOME`，否则 Gradle 报
    `SDK location not found`（见步骤 4）。
+8. **Windows 中文路径下的 JVM 测试编码**：本机 JDK 17 使用 UTF-8 启动 Gradle 测试进程时，
+   工作区路径中的中文会让测试类加载失败。系统代码页为 GBK 的环境可在当前 PowerShell
+   会话中临时统一 Gradle 和测试进程的编码，再在项目原目录执行：
+
+   ```powershell
+   cd porting/android
+   $previousJavaOptions = $env:JAVA_TOOL_OPTIONS
+   try {
+     $env:JAVA_TOOL_OPTIONS = '-Dfile.encoding=GBK'
+     .\gradlew.bat :core-ports:testDebugUnitTest -PskipWeb=true --no-daemon '-Dorg.gradle.jvmargs=-Xmx512m -Dfile.encoding=GBK'
+   } finally {
+     $env:JAVA_TOOL_OPTIONS = $previousJavaOptions
+   }
+   ```
+
+   按实际系统代码页调整编码；此设置仅用于测试。恢复环境变量后再打包，必要时对打包任务
+   加 `--rerun-tasks`：本机曾出现任务显示成功但 APK 仍含旧 DEX 的情况。不要通过另一个
+   目录连接执行测试后再从原路径打包；共享中间产物也可能使 APK 混入旧版本类。
+9. **需要保留旧构建目录时，可用独立产物目录**。以下命令在新的 `artifacts/` 子目录中构建，
+   不调用会扫描旧 `.trash/` 的清理脚本。每次把 `$qaStageName` 改成尚不存在的目录名：
+
+   ```powershell
+   $qaStageName = 'qa-build-js-timeout-status-20261105'
+   cd porting/js
+   node ./node_modules/vite/bin/vite.js build --outDir "../../artifacts/$qaStageName/spa"
+   node ./node_modules/vite/bin/vite.js build --config vite.extension-preload.config.mjs --outDir "../../artifacts/$qaStageName/extension-preload"
+   node scripts/shrink-assets.mjs "--spa-dir=../../artifacts/$qaStageName/spa"
+   node scripts/smoke.mjs "--dist=../../artifacts/$qaStageName"
+   cd ../android
+   .\gradlew.bat :app:assembleDebug -PskipWeb=true "-PjsDistDir=../../artifacts/$qaStageName" -PrequireWeb=true
+   node scripts/check-webdist.mjs --assets "--dist=../../artifacts/$qaStageName"
+   ```
+
+   当前包使用的目录是 `artifacts/qa-build-js-timeout-status-20261105`。指定 `jsDistDir` 时必须同时
+   指定 `-PskipWeb=true`；默认不带 `--dist` 的检查仍然针对旧的 `porting/js/dist`。

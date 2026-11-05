@@ -55,9 +55,10 @@
 
         <!--
           明文流量策略由 res/xml/network_security_config.xml 决定（不再用全局 usesCleartextTraffic）：
-          1. 只有 127.0.0.1 / localhost 允许明文 —— 本地回环服务 + AudioWorklet 的 secure context 前提；
-          2. 其余域名默认 cleartextTrafficPermitted="false"，在线音源必须走 https；
-          3. 需要 http 音源时，把**具体域名**加进那份 XML 的 domain-config，不要写通配；
+          1. 回环 127.0.0.1 / localhost 允许明文 —— 本地回环服务 + AudioWorklet 的 secure context 前提；
+          2. Online Metadata 0.4.8 实际使用的 34 个精确主机允许明文，全部 includeSubdomains="false"；
+          3. 其余域名默认 cleartextTrafficPermitted="false"，在线音源必须走 https；
+          4. 需要 http 音源时，把**具体域名**加进那份 XML 的 domain-config，不要写通配；
              临时排查可用 -PallowCleartext=true 切到宽松配置（manifest placeholder 切换，见 build.gradle.kts）。
           注意这条策略对 OkHttp 同样生效（NetworkSecurityPolicy 在连接前检查），原生代发也会被拦。
         -->

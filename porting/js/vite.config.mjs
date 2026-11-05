@@ -11,6 +11,8 @@
  *    - `@ui/xxx` 是显式写死的 `view-main/src/xxx`，给覆盖层文件用（避免与 `host/` 撞名）
  * 3. `@any-listen/nodejs/*` 与上游包内的相对导入 → 先查覆写表，未命中用上游原文件
  *    （相对导入也必须过一遍，否则 `mirrorReuqest.ts` 里的 `./request` 会绕过 alias 拿到 undici 版）。
+ *    裸 `@any-listen/app/*` 会被 Vite 内置 alias 抢先处理，需要覆写时用 `PACKAGE_OVERRIDES`
+ *    的精确 alias，不能只写进 `OVERRIDES`。
  * 4. `better-sqlite3` → `ports/sqlite.ts`（sql.js WASM）
  * 5. UI 覆盖（O-1..O-5）→ `ui/overrides/...`，同样是覆写表的一条，不区分来源写法。
  *
@@ -81,6 +83,10 @@ const OVERRIDES = {
   'shared/app/modules/worker/utils/index': 'host/worker/index.ts',
   // worker 子侧：`parentPort.once('message')` + `port instanceof MessagePort` → 原生 MessagePort
   'shared/app/modules/worker/utils/worker': 'host/worker/expose.ts',
+  'shared/app/modules/worker/extensionService/shared/configStore':
+    'host/app/modules/worker/extensionService/shared/configStore.ts',
+  'shared/app/modules/worker/extensionService/shared/index':
+    'host/app/modules/worker/extensionService/shared/index.ts',
   // —— view-main UI（Phase 5 触控改造）——
   // 只覆盖"结构必须变"的组件；样式类调整全部走 ui/mobile.less，不动上游文件
   // O-1：曲库歌曲列表（行高 72dp + 多选操作条）。其余覆盖项（ListItem / LyricPlayer /
@@ -96,6 +102,10 @@ const OVERRIDES = {
   // `/online?t=search&q=…`（不是 `/search`），前置条件是先装扩展。
   'view-main/src/components/common/MusicList/List/index.svelte':
     'ui/overrides/components/common/MusicList/List/index.svelte',
+  // 搜索页的在线列表没有上游 `playOnlineList()` 所支持的 `songlist` / `topSongs`
+  // 后台补全接口；搜索结果是快照，直接建立队列即可。其余来源继续走上游实现。
+  'view-main/src/components/common/MusicList/List/action':
+    'ui/overrides/components/common/MusicList/List/action.ts',
   // O-8：播放列表（队列）的点击语义（D-16 的第二个入口）。上游用 `createClickHandle` 做
   // 400ms 双击窗口，首击空转、二次才切歌；触屏没有双击概念，改为单击即切歌。
   // 与 O-1（曲库列表）是同一缺陷的两个入口，必须一起改，否则"点歌不响"只是换个界面复现。
@@ -108,6 +118,22 @@ const OVERRIDES = {
   // —— uiux §5 要求「播放详情顶栏控制键（关闭/全屏）→ 44dp」，没有它判空之后仍然没有关闭键。
   'view-main/src/components/layout/PlayDetail/Header.svelte':
     'ui/overrides/components/layout/PlayDetail/Header.svelte',
+  // 无歌词时上游歌词区只剩空白。覆写只在歌词行为空时显示加载/暂无歌词状态；
+  // 有歌词后继续挂载上游 LyricPlayer，滚动、高亮、制作信息过滤均保持原逻辑。
+  'view-main/src/components/layout/PlayDetail/RightLyric/index.svelte':
+    'ui/overrides/components/layout/PlayDetail/RightLyric/index.svelte',
+  // 播放状态不使用上游内部异常文案；无歌词时迷你播放器显示歌手，而不是
+  // “Failed to obtain lyrics”；音源重试耗尽时显示可行动的中文提示。
+  'view-main/src/components/layout/PlayDetail/Footer/PlayStatusText.svelte':
+    'ui/overrides/components/layout/PlayDetail/Footer/PlayStatusText.svelte',
+  'view-main/src/components/layout/PlayBar/components/PlayInfo.svelte':
+    'ui/overrides/components/layout/PlayBar/components/PlayInfo.svelte',
+  // A-32：上游把“设置”勾选框写死为 disabled，覆写只恢复选择与回调。
+  'view-main/src/views/Setting/AppSetting/Backup/typeSelectModal/App.svelte':
+    'ui/overrides/views/Setting/AppSetting/Backup/typeSelectModal/App.svelte',
+  // 部分音源把「作词/作曲/制作人」等制作人员表当作带时间戳的歌词行返回，
+  // 播放详情页会把它们显示成歌词。初始化歌词时过滤这些元数据行，上游文件不动。
+  'view-main/src/modules/lyric/init': 'ui/overrides/modules/lyric/init.ts',
   // O-2：曲库页空态。上游 `views/Library/index.svelte:157` 只有 `{#if listInfo}`、没有 else，
   // 而 `listInfo` 在 `$query.id` 为空时是 undefined → 内容区一个节点都不渲染（纯白、不报错）。
   // 覆写只改模板，script 段逐行保留。空态里的「导入本地音乐」是手机上加歌的**唯一入口**
@@ -132,6 +158,15 @@ const OVERRIDES = {
   // 改为高度自适应 + 宽度交给网格列。
   'view-main/src/views/Extenstion/ListItemOnline.svelte':
     'ui/overrides/views/Extenstion/ListItemOnline.svelte',
+  // 文件浏览时单击进入目录；目录选择模式仍保留选中目录的能力。
+  'view-main/src/components/material/fileExplorerModal/ListItem.svelte':
+    'ui/overrides/components/material/fileExplorerModal/ListItem.svelte',
+  // 上游把「文件名 + 新建文件夹」和「取消 + 确定」挤在同一行。手机窄屏下
+  // 文件名标签被压成竖排，两组按钮互相重叠。底栏改为可换行：文件名一行，按钮一行。
+  'view-main/src/components/material/fileExplorerModal/FileListModal.svelte':
+    'ui/overrides/components/material/fileExplorerModal/FileListModal.svelte',
+  'view-main/src/components/material/fileExplorerModal/Save.svelte':
+    'ui/overrides/components/material/fileExplorerModal/Save.svelte',
   // O-6：`@/shared/ipc/app` 的两个文件对话框。
   // 上游桌面走 `ipc.showOpenDialog`，Android host **没有也不需要**这个实现（原生 SAF 选择器
   // 拿到的 content:// URI 喂不进 `shims/fs`）；网页版走的是内置文件浏览器弹窗
@@ -150,6 +185,20 @@ const OVERRIDES = {
   'web-server/src/app/modules/extension/index': 'host/app/modules/extension/index.ts',
 }
 
+/**
+ * `@any-listen/app/*` 是上游包对外使用的裸包名，Vite 内置 alias 会先于本插件解析。
+ * 因此这类入口必须用精确 alias 抢在通用 `@any-listen/app` 映射之前接管；只写 `OVERRIDES`
+ * 不会生效（真机实测：设置勾选成功，但导出的备份文件仍只有歌单）。
+ */
+const PACKAGE_OVERRIDES = [
+  {
+    // A-31：上游备份模块只导出/恢复歌单，设置项在 UI 与 importData 里都被禁用。
+    // 覆写补齐设置快照与安全恢复；source/ 不动。
+    find: /^@any-listen\/app\/modules\/backup$/,
+    replacement: 'host/app/modules/backup/index.ts',
+  },
+]
+
 /** 绕过覆写，强制指回上游原文件（供覆写文件内部引用"上游版本"） */
 const RAW_TARGETS = {
   '@any-listen/nodejs/uplink': 'shared/nodejs/index',
@@ -159,6 +208,10 @@ const RAW_TARGETS = {
   // `@/shared/ipc/app` 的 `export *` 出口：让 `ui/overrides/shared/ipc/app/index.ts`
   // 只替换 showOpenDialog / showSaveDialog，其余转发函数全部沿用上游（同 extension 的作法）
   '@ui-raw/shared/ipc/app': 'view-main/src/shared/ipc/app/index',
+  '@ui-raw/components/material/fileExplorerModal/ListItem.svelte':
+    'view-main/src/components/material/fileExplorerModal/ListItem.svelte',
+  '@ui-raw/components/common/MusicList/List/action':
+    'view-main/src/components/common/MusicList/List/action',
 }
 
 /** Node 内建模块 → shims。键必须写全，不接受 `node:x/y` 前缀模糊匹配（会串味） */
@@ -350,6 +403,11 @@ export default defineConfig({
     // 所以 Node 的向上查找到不了 `source/packages/web-server/node_modules`。
     // 这里显式把 `@any-listen/*` 指到真实目录（`@any-listen/nodejs` 由插件处理，不在此列）。
     alias: [
+      // 精确包名覆写必须放在通用 `@any-listen/app` 之前（详见 PACKAGE_OVERRIDES 注释）
+      ...PACKAGE_OVERRIDES.map(({ find, replacement }) => ({
+        find,
+        replacement: path.join(ROOT, replacement),
+      })),
       // 裸 `buffer` 会被 vite 当成 Node 内建而 externalize（node-forge 依赖的 safe-buffer 会因此拿到空模块）。
       // 指到真实包，既不自引用也不会被 externalize。
       { find: 'buffer', replacement: path.join(ROOT, 'node_modules/buffer/index.js') },

@@ -77,30 +77,34 @@ class TarPortImpl : TarPort {
     if (!destRoot.exists() && !destRoot.mkdirs()) {
       throw PortException(PortErrorCode.EACCES, "EACCES: cannot create '$dist'", dist)
     }
-    val gzip = source.name.endsWith(".gz") || source.name.endsWith(".tgz")
     try {
-      val raw = BufferedInputStream(source.inputStream())
-      val input = if (gzip) GzipCompressorInputStream(raw) else raw
-      TarArchiveInputStream(input).use { tar ->
-        var entry: TarArchiveEntry? = tar.nextEntry
-        while (entry != null) {
-          val outFile = File(destRoot, entry.name).canonicalFile
-          // 路径穿越防护（CVE 类问题）：条目名里出现 `..` 时拒绝解包
-          if (!outFile.path.startsWith(destRoot.path + File.separator) && outFile.path != destRoot.path) {
-            throw PortException(
-              PortErrorCode.EACCES,
-              "EACCES: archive entry escapes target dir: ${entry.name}",
-              entry.name,
-            )
+      BufferedInputStream(source.inputStream()).use { raw ->
+        // 扩展商店的 .alix 文件也是 gzip TAR；与上游 tar 一样按内容而非后缀识别。
+        raw.mark(2)
+        val gzip = raw.read() == 0x1f && raw.read() == 0x8b
+        raw.reset()
+        val input = if (gzip) GzipCompressorInputStream(raw) else raw
+        TarArchiveInputStream(input).use { tar ->
+          var entry: TarArchiveEntry? = tar.nextEntry
+          while (entry != null) {
+            val outFile = File(destRoot, entry.name).canonicalFile
+            // 路径穿越防护（CVE 类问题）：条目名里出现 `..` 时拒绝解包
+            if (!outFile.path.startsWith(destRoot.path + File.separator) && outFile.path != destRoot.path) {
+              throw PortException(
+                PortErrorCode.EACCES,
+                "EACCES: archive entry escapes target dir: ${entry.name}",
+                entry.name,
+              )
+            }
+            if (entry.isDirectory) {
+              outFile.mkdirs()
+            } else {
+              outFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
+              FileOutputStream(outFile).use { out -> tar.copyTo(out, 64 * 1024) }
+              if (entry.mode and 0b001_000_000 != 0) outFile.setExecutable(true, false)
+            }
+            entry = tar.nextEntry
           }
-          if (entry.isDirectory) {
-            outFile.mkdirs()
-          } else {
-            outFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
-            FileOutputStream(outFile).use { out -> tar.copyTo(out, 64 * 1024) }
-            if (entry.mode and 0b001_000_000 != 0) outFile.setExecutable(true, false)
-          }
-          entry = tar.nextEntry
         }
       }
     } catch (e: PortException) {

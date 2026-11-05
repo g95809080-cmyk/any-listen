@@ -29,12 +29,14 @@
  *   node scripts/shrink-assets.mjs --dry-run # 只报告
  */
 
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const SPA = path.join(ROOT, 'dist', 'spa')
+const spaDirArg = process.argv.find((arg) => arg.startsWith('--spa-dir='))
+if (spaDirArg === '--spa-dir=') throw new Error('--spa-dir 不能为空')
+const SPA = spaDirArg ? path.resolve(ROOT, spaDirArg.slice('--spa-dir='.length)) : path.join(ROOT, 'dist', 'spa')
 
 const dryRun = process.argv.includes('--dry-run')
 
@@ -91,25 +93,36 @@ if (wasmRefs.size === 0) {
     if (!name.endsWith('.wasm')) continue
     if (wasmRefs.has(name)) continue
     const size = statSync(path.join(assetsDir, name)).size
-    // 删不掉**不能让整个构建失败**：某些环境对批量删除有配额/安全策略，
-    // 而孤儿 wasm 会由 `scripts/smoke.mjs` 的反向门禁兜住（它跑在 build 之后）。
+    // 删除受限时先隔离到 dist 外，与 copy-wasm 的处理方式一致。
     try {
       unlinkSync(path.join(assetsDir, name))
       purgedBytes += size
       purged.push(name)
     } catch (err) {
-      purgeFailed.push(`${name}（${err instanceof Error ? err.message : String(err)}）`)
+      try {
+        const trashDir = path.join(ROOT, '.trash')
+        mkdirSync(trashDir, { recursive: true })
+        const isolated = path.join(trashDir, `${path.basename(name)}.old.${Date.now()}.${process.pid}`)
+        if (existsSync(isolated)) throw new Error(`隔离目标已存在: ${isolated}`)
+        renameSync(path.join(assetsDir, name), isolated)
+        purgedBytes += size
+        purged.push(name)
+        console.warn(`[shrink] 删除失败，已隔离未引用资源到 ${isolated}`)
+      } catch (moveErr) {
+        purgeFailed.push(`${name}（删除: ${String(err)}；隔离: ${String(moveErr)}）`)
+      }
     }
   }
   if (purged.length) {
     console.log(
-      `[shrink] 删除 ${purged.length} 个未被引用的 wasm 资产（${fmt(purgedBytes)}）：${purged.map((n) => n.replace(/-[\w-]{8}\.wasm$/, '')).join(', ')}`
+      `[shrink] 移除 ${purged.length} 个未被引用的 wasm 资产（${fmt(purgedBytes)}）：${purged.map((n) => n.replace(/-[\w-]{8}\.wasm$/, '')).join(', ')}`
     )
   }
   if (purgeFailed.length) {
     console.warn(
-      `[shrink] ${purgeFailed.length} 个孤儿 wasm 删除失败，它们会被整拷进 APK：\n  - ${purgeFailed.join('\n  - ')}\n  处理办法：单独再跑一次 \`node scripts/shrink-assets.mjs\`。`
+      `[shrink] ${purgeFailed.length} 个孤儿 wasm 无法删除或隔离：\n  - ${purgeFailed.join('\n  - ')}`
     )
+    process.exit(1)
   }
 }
 

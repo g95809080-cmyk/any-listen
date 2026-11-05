@@ -158,6 +158,50 @@ html.mobile .pagination .btn {
   min-height: var(--touch-min) !important;
 }
 
+/* 在线资源的桌面侧栏在手机上不足以显示来源名称，改为可横滑的来源条。 */
+html.mobile :is(.online-search-music, .online-songlist-list) {
+  flex-flow: column nowrap !important;
+  padding-top: 0 !important;
+}
+html.mobile :is(.online-search-music, .online-songlist-list) > .source-list {
+  flex: 0 0 var(--touch-min) !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: var(--touch-min) !important;
+  margin: 0 12px 8px !important;
+  overflow: hidden !important;
+}
+html.mobile :is(.online-search-music, .online-songlist-list) > .source-list > .list {
+  display: flex !important;
+  flex-flow: row nowrap !important;
+  height: var(--touch-min) !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+html.mobile :is(.online-search-music, .online-songlist-list) > .source-list .list-item {
+  display: flex !important;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0 12px !important;
+  line-height: normal !important;
+  white-space: nowrap;
+}
+/* 分页在窄屏上从第一页开始显示，超出部分可横滑。 */
+html.mobile :is(.online-search-music, .online-songlist-list) .pagination:has(> .pagination) {
+  justify-content: flex-start !important;
+  max-width: 100%;
+  overflow-x: auto;
+}
+html.mobile :is(.online-search-music, .online-songlist-list) .pagination > .pagination {
+  flex: 0 0 auto;
+}
+html.mobile :is(.online-search-music, .online-songlist-list) .pagination ul {
+  gap: 0 !important;
+  padding: 0 !important;
+}
+
 /* ---------- 3. 弹层 → BottomSheet（B-10）---------- */
 /* 覆盖 34 处右键菜单（base/Menu）+ 全部 Dropdown + hover 弹层（base/Popup）
    这些元素的 left/top/transform/opacity 都是 JS 写在 inline style 上的 → 必须 !important */
@@ -638,14 +682,43 @@ html.mobile .view-container > .header:has(> span) {
   display: none !important;
 }
 
-/* ---------- 10. 通知（Toast → Snackbar）---------- */
-html.mobile .notify-container {
-  bottom: calc(var(--tabbar-h) + var(--miniplayer-h) + 16px) !important;
-}
-html.mobile .notify-item {
+/* ---------- 10. 通知（Toast → Snackbar）----------
+ *
+ * 上游 `.notify-content` 是 `position:absolute; left:50%; width:auto`。
+ * 绝对定位元素在 left 已占掉一半容器宽度时，`width:auto` 的可用宽度只剩另一半：
+ * 393dp 真机上父容器 314px，提示条实测只有 **157px 宽 × 118px 高**，
+ * 第三方扩展的「HTTP 400」长句因此被挤成窄柱、逐字换行。
+ * 改成整行宽度，并放在迷你播放器 + 标签栏之上。
+ */
+html.mobile .notify {
+  bottom: calc(var(--miniplayer-h) + var(--tabbar-h) + var(--safe-bottom) + 12px) !important;
   width: calc(100vw - 32px) !important;
+  max-width: none !important;
+}
+html.mobile .notify .notify-content {
+  width: 100% !important;
   min-width: 0 !important;
-  margin: 0 16px !important;
+  max-height: 50dvh !important;
+  padding: 12px 8px 12px 16px !important;
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  border-radius: 12px !important;
+}
+html.mobile .notify .notify-content > .content {
+  max-height: calc(50dvh - 56px) !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+html.mobile .notify .notify-content > .btn {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* 上游 Loading 的 loading / error 各自做 200ms fade，状态切换时会短暂同屏，
+ * 失败文案背后叠着「加载中…」。错误态已经足够表达结果，直接撤掉仍在淡出的加载层。 */
+html.mobile .loading:has(+ .error) {
+  display: none !important;
 }
 
 /* ---------- 11. hover 语义修正 ---------- */
@@ -688,20 +761,16 @@ html.mobile #app-right {
   min-width: 0 !important;
 }
 
-/* 长按多选态：底部操作条（O-1 的 .mobile-select-bar，见 ui/overrides/.../List/index.svelte） */
+/* 多选态：列表外的底部操作条（O-1 的 .mobile-select-bar，见 ui/overrides/.../List/index.svelte）。
+   不悬浮在歌曲列表上，否则任何滚到右下角的行都会被遮住。 */
 html.mobile .mobile-select-bar {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 5;
   display: flex;
+  flex: auto;
   gap: var(--gap-min);
   align-items: center;
-  min-height: 56px;
-  padding: 6px 12px calc(6px + var(--safe-bottom));
+  min-height: 44px;
+  padding: 0 4px;
   background-color: var(--color-main-background);
-  border-top: 1px solid var(--color-primary-light-400-alpha-800);
 }
 html.mobile .mobile-select-bar .count {
   flex: auto;
@@ -882,7 +951,7 @@ html.mobile .play-detail .left-info {
   flex: none !important;
   width: 100% !important;
   height: auto !important;
-  max-height: 40dvh;
+  max-height: none !important;
   padding: 4px 20px 0 !important;
   --content-width: 46%;          /* 412dp 下 ≈ 171dp 见方 */
 }
@@ -891,10 +960,10 @@ html.mobile .play-detail .left-info > :first-child {
   max-height: none !important;   /* §5 的 38dvh 会破坏 aspect-ratio:1/1 → 非等比拉伸 */
 }
 html.mobile .play-detail .left-info .info {
+  flex: 0 0 auto !important;
   width: 100% !important;
-  max-height: 5.2em;
   margin-top: 8px !important;
-  overflow-y: auto;
+  overflow: visible !important;
 }
 
 /* 歌词区：吃掉剩余高度，内部自己滚 */
@@ -903,6 +972,40 @@ html.mobile .play-detail .right-lyric {
   flex: 1 1 auto !important;
   min-height: 96px !important;
   margin-top: 4px;
+}
+
+/* 歌词：上游按「窗口宽 / 1020」缩放字号（LyricPlayer.svelte），393dp 竖屏只剩
+   (0.8 + 80%) × 0.385rem ≈ 9.8px；默认左对齐 + 左侧放大会让歌词看起来像一条小字。
+   这里按原字号乘 1.72 抵消桌面宽度比例，设下 16px 的可读下限、24px 上限，用户
+   调整「播放详情字号」时仍会跟随变化；布局改为居中，活动行不再横向放大出屏。 */
+html.mobile .play-detail .lyric {
+  font-size: clamp(16px, calc(var(--play-detail-lrc-font-size) * 1.72), 24px) !important;
+  text-align: center !important;
+}
+html.mobile .play-detail .lyric .line-content,
+html.mobile .play-detail .lyric.text-left .line-content,
+html.mobile .play-detail .lyric.text-right .line-content,
+html.mobile .play-detail .lyric.text-center .line-content {
+  padding: 5px 20px !important;
+  transform-origin: center !important;
+}
+html.mobile .play-detail .lyric .line-content.active,
+html.mobile .play-detail .lyric.lrc-active-zoom .line-content.active {
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+  transform: scale(1.02);
+}
+/* 未播放歌词用 --color-300 时在浅色详情页上只有约 1.7:1 对比度，整片歌词几乎看不见。
+   这里改用中性灰 650（白底约 4.7:1），已播放/当前行仍用主题蓝区分。 */
+html.mobile .play-detail .lyric .line-mode .font-lrc {
+  color: var(--color-650) !important;
+}
+html.mobile .play-detail .lyric .line-mode.played .font-lrc,
+html.mobile .play-detail .lyric .line-mode.active .font-lrc {
+  color: var(--color-primary-dark-200) !important;
+}
+html.mobile .play-detail .lyric .line-content.line-mode.active .font-lrc {
+  font-weight: 600;
 }
 
 /* 控制区：去掉 size containment → 高度由内容决定；底部吃 --inset-bottom */
@@ -916,7 +1019,9 @@ html.mobile .play-detail .footer-content {
   display: flex !important;
   flex-flow: column nowrap !important;
   height: auto !important;
-  padding: 16px 8px 0 !important;
+  /* 状态文字是绝对定位贴底显示；留出它自己的 16px 高度，避免暂停/报错时
+     压在最后一行辅助控制键上。 */
+  padding: 16px 8px 20px !important;
 }
 /* 进度条挪到运输控制**上方**（DOM 顺序是 control → progress → status，这里用 order 换位）。
    原因：进度条的可拖拽命中带是 44dp 高的 `.progress-mask`（§6），比视觉轨道高一倍；

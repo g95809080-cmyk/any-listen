@@ -16,14 +16,17 @@ class LifecycleHub {
   private val backgroundListeners = CopyOnWriteArrayList<() -> Unit>()
   private val foregroundListeners = CopyOnWriteArrayList<() -> Unit>()
   private val trimListeners = CopyOnWriteArrayList<(Int) -> Unit>()
-  private val terminateListeners = CopyOnWriteArrayList<() -> Unit>()
+  private val terminateListeners = CopyOnWriteArrayList<(String) -> Unit>()
+  @Volatile private var terminationAckListener: ((String, String) -> Unit)? = null
 
   fun isInForeground(): Boolean = foreground
 
   fun onBackground(listener: () -> Unit) = backgroundListeners.add(listener)
   fun onForeground(listener: () -> Unit) = foregroundListeners.add(listener)
   fun onTrimMemory(listener: (Int) -> Unit) = trimListeners.add(listener)
-  fun onBeforeTerminate(listener: () -> Unit) = terminateListeners.add(listener)
+  fun onBeforeTerminate(listener: (String) -> Unit) = terminateListeners.add(listener)
+  fun setTerminationAckListener(listener: ((String, String) -> Unit)?) { terminationAckListener = listener }
+  fun acknowledgeTermination(id: String, source: String) { terminationAckListener?.invoke(id, source) }
 
   /**
    * 作废全部订阅（D-31：渲染进程被回收后重建 WebView 时调用）。
@@ -37,6 +40,7 @@ class LifecycleHub {
     foregroundListeners.clear()
     trimListeners.clear()
     terminateListeners.clear()
+    terminationAckListener = null
   }
 
   /** 由 :app 的 Activity 生命周期回调驱动 */
@@ -54,7 +58,7 @@ class LifecycleHub {
     trimListeners.forEach { runCatching { it(level) } }
   }
 
-  fun dispatchBeforeTerminate() {
-    terminateListeners.forEach { runCatching { it() } }
+  fun dispatchBeforeTerminate(id: String) {
+    terminateListeners.forEach { runCatching { it(id) } }
   }
 }

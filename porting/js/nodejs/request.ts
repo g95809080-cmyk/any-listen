@@ -20,6 +20,8 @@ const DEFAULT_UA =
 const DEFAULT_TIMEOUT = 15_000
 const DEFAULT_MAX_REDIRECT = 5
 const DEFAULT_RETRY_NUM = 3
+const STATUS_RETRY_DELAYS = [400, 1200] as const
+const RETRYABLE_STATUS = new Set([502, 503, 504])
 
 const CONTENT_TYPE = {
   json: 'application/json',
@@ -196,14 +198,27 @@ export const request = async <T = unknown>(url: string, options: Options = {}): 
     timeoutMs: options.timeout ?? DEFAULT_TIMEOUT,
     retryNum: options.retryNum ?? DEFAULT_RETRY_NUM,
     maxRedirect: options.maxRedirect ?? DEFAULT_MAX_REDIRECT,
+    needRaw: Boolean(options.needRaw || options.needBody),
   }
   const query = buildQuery(options.query)
   if (query) requestOptions.query = query
   if (built.body != null) requestOptions.body = built.body
   if (proxyState) requestOptions.proxy = proxyState
 
-  const response = await ports.http.request(url, requestOptions)
-  const responseHeaders = response.headers as Record<string, string | undefined>
+  // 第三方音源会在并发预载时返回短时 502/503/504。undici 的 retry 拦截器只处理
+  // 网络层异常，不会重试 HTTP 状态，因此这里对幂等请求补两次有间隔的尝试；
+  // `retryNum: 0`（如资源校验）仍保持单次请求语义。
+  const retryCount =
+    method === 'GET' || method === 'HEAD' ? Math.min(Math.max(options.retryNum ?? DEFAULT_RETRY_NUM, 0), 2) : 0
+  let response = await ports.http.request(url, requestOptions)
+  for (let attempt = 0; attempt < retryCount && RETRYABLE_STATUS.has(response.statusCode); attempt++) {
+    if (response.filePath) await ports.fs.remove(response.filePath).catch(() => undefined)
+    await new Promise((resolve) => setTimeout(resolve, STATUS_RETRY_DELAYS[attempt] ?? STATUS_RETRY_DELAYS.at(-1)))
+    response = await ports.http.request(url, requestOptions)
+  }
+  // undici 以小写键返回响应头；上游 WebDAV 等调用方依赖此约定。
+  const responseHeaders: Record<string, string | undefined> = {}
+  for (const [name, value] of Object.entries(response.headers)) responseHeaders[name.toLowerCase()] = value
 
   if (options.needBody) {
     const bytesProvider = async (): Promise<Uint8Array> => {
@@ -234,7 +249,8 @@ export const request = async <T = unknown>(url: string, options: Options = {}): 
     } as Response<T>
   }
 
-  const text = response.body ?? ''
+  // 大响应由原生层写入临时文件，不能把缺失的内联 body 当成空内容。
+  const text = response.body ?? (response.filePath ? Buffer.from(await ports.fs.readFile(response.filePath)).toString('utf8') : '')
   return {
     // 传**请求头**：语义对齐上游（见 parseBody 的注释），不是笔误
     body: parseBody(text, headers) as T,

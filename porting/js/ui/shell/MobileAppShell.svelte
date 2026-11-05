@@ -1,11 +1,15 @@
 <script lang="ts">
   import Router from '@ui/plugins/svelte-spa-router/Router.svelte'
-  import routes, { location, push, replace } from '@ui/plugins/routes'
+  import routes, { location, push, query, replace } from '@ui/plugins/routes'
   import { musicInfo } from '@ui/modules/player/reactive.svelte'
+  import { userListsAll } from '@ui/modules/musicLibrary/reactive.svelte'
+  import { importLocalFile } from '@ui/components/layout/Aside/MyList/action'
+  import { LIST_IDS } from '@any-listen/common/constants'
   import { t, tm } from '@porting/ui/i18n'
 
   import MiniPlayer from './MiniPlayer.svelte'
   import MobileAppBar from './MobileAppBar.svelte'
+  import MobileOnlineSearch from './MobileOnlineSearch.svelte'
   import MobileTabBar from './MobileTabBar.svelte'
 
   const hasMusic = $derived(!!$musicInfo.id)
@@ -32,6 +36,20 @@
   const isSettings = $derived(
     $location === '/settings' || $location.startsWith('/settings?')
   )
+  const isOnline = $derived($location.split('?')[0] === '/online')
+  const isLibrary = $derived($location.split('?')[0] === '/library')
+  const importList = $derived($userListsAll.find((list) => list.id === $query.id))
+  const canImport = $derived(
+    importList != null && importList.id !== LIST_IDS.LAST_PLAYED &&
+      (importList.type === 'default' || importList.type === 'general') &&
+      (importList.meta.songCount > 0 || importList.type === 'general')
+  )
+  const importMusic = () => {
+    if (!importList || !canImport) return
+    void importLocalFile(importList as AnyListen.List.MyListInfo).catch((error: unknown) => {
+      console.error('[mobile] 导入本地音乐失败', error)
+    })
+  }
   const openExtension = () => {
     void push('/extenstion')
   }
@@ -65,9 +83,15 @@
   所以 `views/*` 的根节点 `.view-container` 不需要改。
 -->
 <div class="shell" class:with-player={hasMusic} class:is-root={isRoot}>
-  <MobileAppBar {title} back={!isRoot} onback={goBack}>
+  <MobileAppBar {title} back={!isRoot} onback={goBack} search={isOnline}>
     {#snippet actions()}
-      {#if isSettings}
+      {#if isOnline}
+        <MobileOnlineSearch />
+      {:else if isLibrary && canImport}
+        <button class="ab-entry" type="button" aria-label={tm('mobile__library_empty_import')} onclick={importMusic}>
+          {tm('mobile__library_import')}
+        </button>
+      {:else if isSettings}
         <button class="ab-entry" type="button" onclick={openExtension}>
           {tm('mobile__extension_manage')}
         </button>

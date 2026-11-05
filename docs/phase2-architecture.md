@@ -4,6 +4,7 @@
 > 输入：`docs/phase1-spec.md`（规格包，E-01~E-14 / A-01~A-09 / R-01~R-17）、`docs/porting-decision-record.md`（PDR-001~005）
 > 本文所有结论均带源码位置；推断处标 `[假设]`。
 > **本阶段不修改 `source/` 任何文件**，所有改造以「新增 `porting/` 目录 + 构建期 alias 重定向」实现（见 §6.2）。
+> **实现更新（2026-11-04）**：播放中的 WebView 由 `WebPlaybackRuntime` 在 Activity 销毁后暂时持有；停止播放后的退出会等待 core 和 db worker 的落盘回执，超时上限 10 秒。下文 §4.9 是当时的接口设计，现行 `LifecyclePort` 在 `onBeforeTerminate` 中传退出请求 ID，并增加 `acknowledgeTermination(id, source)`；实现与验收分别见 `porting/js/ports/types.ts`、`docs/phase5-acceptance-report.md` §17。
 
 ---
 

@@ -61,6 +61,8 @@ interface MediaSessionPort {
   fun updateLyricLine(line: String?)
   /** 系统/耳机键/通知栏 → JS 的控制回调 */
   fun onControl(listener: (MediaAction, Double?) -> Unit)
+  /** 页面销毁后旧的 JS 回调不再可用，需要在新页面订阅前清理。 */
+  fun clearControlListeners()
   /** 查询当前快照（通知栏与浮层读取用） */
   fun snapshot(): PlaybackSnapshot
   /** 由 :app 的 PlaybackService 在会话建立后回填（避免 :core-ports 依赖 media3） */
@@ -83,12 +85,15 @@ interface MediaSessionSink {
  * 默认实现：纯状态机 + 侦听器分发，不含任何 Android UI 依赖，
  * 因此可以在没有通知权限/没有前台服务的场景下独立工作（例如 Phase 5 的桥接单测）。
  */
-class MediaSessionPortImpl : MediaSessionPort {
+class MediaSessionPortImpl(
+  private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
+) : MediaSessionPort {
   private var metadata: MediaMetadataSnapshot? = null
   private var playbackState: String = "none"
   private var durationMs: Long = 0
   private var positionMs: Long = 0
   private var playbackRate: Float = 1f
+  private var positionUpdatedAt = monotonicMillis()
   private var actions: Set<MediaAction> = PlaybackSnapshot.DEFAULT_ACTIONS
   private var lyricLine: String? = null
   private val listeners = java.util.concurrent.CopyOnWriteArrayList<(MediaAction, Double?) -> Unit>()
@@ -99,20 +104,26 @@ class MediaSessionPortImpl : MediaSessionPort {
     sink?.onMetadataChanged(metadata)
   }
 
+  @Synchronized
   override fun setPlaybackState(state: String) {
     val normalized = when (state.lowercase()) {
       "playing" -> "playing"
       "paused" -> "paused"
       else -> "none"
     }
+    val now = monotonicMillis()
+    positionMs = currentPosition(now)
+    positionUpdatedAt = now
     playbackState = normalized
     sink?.onPlaybackStateChanged(normalized)
   }
 
+  @Synchronized
   override fun setPosition(durationMs: Long, positionMs: Long, playbackRate: Float) {
     this.durationMs = durationMs.coerceAtLeast(0)
     this.positionMs = positionMs.coerceAtLeast(0)
     this.playbackRate = if (playbackRate > 0) playbackRate else 1f
+    positionUpdatedAt = monotonicMillis()
     sink?.onPositionChanged(this.durationMs, this.positionMs, this.playbackRate)
   }
 
@@ -132,18 +143,27 @@ class MediaSessionPortImpl : MediaSessionPort {
     listeners.add(listener)
   }
 
+  override fun clearControlListeners() = listeners.clear()
+
   override fun dispatchControl(action: MediaAction, value: Double?) {
     listeners.forEach { runCatching { it(action, value) } }
   }
 
+  @Synchronized
   override fun snapshot(): PlaybackSnapshot = PlaybackSnapshot(
     isPlaying = playbackState == "playing",
-    positionMs = positionMs,
+    positionMs = currentPosition(monotonicMillis()),
     durationMs = durationMs,
     playbackRate = playbackRate,
     actions = actions,
     lyricLine = lyricLine,
   )
+
+  private fun currentPosition(now: Long): Long {
+    val elapsed = if (playbackState == "playing") (now - positionUpdatedAt).coerceAtLeast(0) else 0
+    val position = positionMs + (elapsed * playbackRate).toLong()
+    return if (durationMs > 0) position.coerceAtMost(durationMs) else position
+  }
 
   override fun attachSink(sink: MediaSessionSink?) {
     this.sink = sink

@@ -9,7 +9,7 @@
  *
  * 因此这里的规则是：
  * - 移植层自己的文件（entries / host / ports / shims / nodejs / types）**必须零错误**，否则退出码 1
- * - 上游文件的诊断**只统计不拦截**（上游的严格性由它自己的 `pnpm typecheck` 保证）
+ * - 上游文件的诊断**只统计不拦截**；其中包含类型环境和模块解析差异，未逐项判定原因
  *
  * 这样既守住了用户 P0 的 "strict: true + 禁 any 逃逸"，又不会用上游的 lib 冲突掩盖真实问题。
  */
@@ -29,6 +29,11 @@ try {
   })
 } catch (err) {
   stdout = `${err.stdout ?? ''}${err.stderr ?? ''}`
+  // tsc 的 1/2 表示诊断；启动失败、被终止或未输出任何诊断不能当成零错误。
+  if ((err.status !== 1 && err.status !== 2) || !/error TS\d+/.test(stdout)) {
+    console.error('类型检查未正常完成：', stdout.trim() || err.message)
+    process.exit(1)
+  }
 }
 
 const lines = stdout
@@ -39,7 +44,9 @@ const lines = stdout
 const ownFiles = []
 const upstreamFiles = []
 for (const line of lines) {
-  if (/source[\\/]packages/.test(line)) upstreamFiles.push(line)
+  // 只按诊断所属文件分类；错误描述中也可能引用上游路径。
+  const file = line.match(/^(.*?)\(\d+,\d+\): error TS\d+/)?.[1] ?? ''
+  if (/(^|[\\/])source[\\/]packages[\\/]/.test(file)) upstreamFiles.push(line)
   else ownFiles.push(line)
 }
 
@@ -53,7 +60,7 @@ if (ownFiles.length) {
 console.log(`移植层类型检查通过（strict: true，0 错误）`)
 if (upstreamFiles.length) {
   console.log(
-    `上游 source/packages 有 ${upstreamFiles.length} 条诊断，因 DOM/WebWorker 与 Node globals 冲突，` +
-      `按约定不计入移植层门禁（详见 scripts/typecheck.mjs 顶部说明）`,
+    `上游 source/packages 有 ${upstreamFiles.length} 条诊断，按约定不计入移植层门禁；` +
+      `此结果不代表上游类型检查通过（详见 scripts/typecheck.mjs 顶部说明）`,
   )
 }

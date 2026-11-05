@@ -61,6 +61,7 @@ const dict = {
     'zh-tw': '匯入本機音樂',
     'en-us': 'Import local music',
   },
+  mobile__library_import: { 'zh-cn': '导入', 'zh-tw': '匯入', 'en-us': 'Import' },
   /**
    * 设置页顶栏的入口文案（D-12）。上游把扩展管理页 `#/extenstion` 的入口只挂在
    * `Aside/Nav.svelte` 与 `Header/ControlBtnsDesktop.svelte`（移动壳都不渲染）→
@@ -71,6 +72,41 @@ const dict = {
     'zh-cn': '扩展管理',
     'zh-tw': '擴充管理',
     'en-us': 'Extensions',
+  },
+  mobile__online_source_unavailable: {
+    'zh-cn': '在线音源暂时不可用，请稍后重试',
+    'zh-tw': '線上音源暫時無法使用，請稍後再試',
+    'en-us': 'Online source temporarily unavailable. Try again later.',
+  },
+  mobile__online_source_no_script: {
+    'zh-cn': '当前音源扩展缺少可执行的音源脚本，请到扩展管理导入音源后重试',
+    'zh-tw': '目前音源擴充缺少可執行的音源腳本，請到擴充管理匯入音源後再試',
+    'en-us': 'The source extension has no runnable source script. Import a source in Extensions and try again.',
+  },
+  mobile__online_source_missing: {
+    'zh-cn': '没有可播放的在线音源，请到扩展管理安装并启用支持播放的音源',
+    'zh-tw': '沒有可播放的線上音源，請到擴充管理安裝並啟用支援播放的音源',
+    'en-us': 'No playable online source is available. Install and enable a playback source in Extensions.',
+  },
+  mobile__online_source_cleartext: {
+    'zh-cn': '该音源需要 HTTP 连接，已被系统网络安全策略拦截',
+    'zh-tw': '該音源需要 HTTP 連線，已被系統網路安全策略攔截',
+    'en-us': 'This source requires HTTP and was blocked by the network security policy.',
+  },
+  mobile__online_source_timeout: {
+    'zh-cn': '在线音源响应超时，请检查网络后重试',
+    'zh-tw': '線上音源回應逾時，請檢查網路後再試',
+    'en-us': 'Online source timed out. Check your network and try again.',
+  },
+  mobile__lyric_loading: {
+    'zh-cn': '歌词加载中…',
+    'zh-tw': '歌詞載入中…',
+    'en-us': 'Loading lyrics…',
+  },
+  mobile__lyric_empty: {
+    'zh-cn': '暂无歌词',
+    'zh-tw': '暫無歌詞',
+    'en-us': 'No lyrics',
   },
 } as const
 

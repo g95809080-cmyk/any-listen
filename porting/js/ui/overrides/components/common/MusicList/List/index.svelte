@@ -11,6 +11,7 @@
    * 2. 新增「多选」入口按钮：上游靠表头复选框进多选，而表头在移动端被
    *    `mobile.less` §4 隐藏了（4 列 → 双行卡片后表头无意义），必须补一个可见入口。
    * 3. 新增多选态底部操作条（`.mobile-select-bar`，样式在 `ui/mobile.less` §13）。
+   *    入口和操作条都占列表外的独立布局空间，不悬浮在歌曲行上。
    * 4. **单击即播**（D-16）：上游 `action.ts` 的 `musicClick` 是手写的 400ms 双击窗口 ——
    *    首击只记录时间、不出声，这对桌面「单击选中 / 双击播放」是合理的，但触屏没有
    *    双击语义（用户不会为了放一首歌先点两下）。这里改为单击直接 `playMusic`，
@@ -230,17 +231,6 @@
       {/snippet}
     </VirtualizedList>
 
-    {#if !multimode}
-      <button class="multiselect-entry" onclick={enterMultiMode}>{tm('mobile__multi_select')}</button>
-    {:else}
-      <!-- ← 改动 3：多选态底部操作条（样式在 ui/mobile.less §13） -->
-      <div class="mobile-select-bar">
-        <span class="count">{tm('mobile__selected_count', { num: select.list.length })}</span>
-        <button class="bar-btn" onclick={selectAll}>{t('select_all')}</button>
-        <button class="bar-btn" onclick={exitMultiMode}>{t('batch_select_exit')}</button>
-      </div>
-    {/if}
-
     <Menu
       bind:this={menu}
       {source}
@@ -256,6 +246,18 @@
         multimode = false
       }}
     />
+  </div>
+  <div class="mobile-list-actions">
+    {#if !multimode}
+      <button class="multiselect-entry" onclick={enterMultiMode}>{tm('mobile__multi_select')}</button>
+    {:else}
+      <!-- ← 改动 3：多选态操作条（样式在 ui/mobile.less §13） -->
+      <div class="mobile-select-bar">
+        <span class="count">{tm('mobile__selected_count', { num: select.list.length })}</span>
+        <button class="bar-btn" onclick={selectAll}>{t('select_all')}</button>
+        <button class="bar-btn" onclick={exitMultiMode}>{t('batch_select_exit')}</button>
+      </div>
+    {/if}
   </div>
 {:else if loaded}
   <Empty />
@@ -283,14 +285,18 @@
     overflow: hidden;
   }
 
-  /* 多选入口：贴列表右下角悬浮，44×44 命中区。
-     不放进 Header 是因为 Header 在移动端被整块隐藏（mobile.less §4），
-     而多选是高频操作，必须有稳定的可达位置。 */
+  /* 多选入口占列表外的独立行。不能悬浮在列表上：按钮固定于容器右下角，
+     任何滚到该位置的歌曲行都会被遮住，只给列表尾部留 padding 无法解决。 */
+  .mobile-list-actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    min-height: 56px;
+    padding: 4px 8px 8px;
+  }
+
   .multiselect-entry {
-    position: absolute;
-    right: 8px;
-    bottom: calc(12px + var(--safe-bottom, 0px));
-    z-index: 4;
+    margin-left: auto;
     min-width: 44px;
     min-height: 44px;
     padding: 0 14px;

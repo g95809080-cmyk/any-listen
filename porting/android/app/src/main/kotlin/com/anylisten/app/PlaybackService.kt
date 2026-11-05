@@ -18,18 +18,12 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat.MediaStyle
 import com.anylisten.ports.PortRegistry
-import com.anylisten.ports.audio.AudioFocusEvent
 import com.anylisten.ports.media.MediaAction
 import com.anylisten.ports.media.MediaMetadataSnapshot
 import com.anylisten.ports.media.MediaSessionSink
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
 /**
- * 前台播放服务（§4.6 / R-09）：系统媒体会话 + AudioFocus + MediaStyle 常驻通知。
+ * 前台播放服务（§4.6 / R-09）：系统媒体会话 + MediaStyle 常驻通知。
  *
  * **音频本身仍在 WebView 里**（PDR-005：复用 `plugins/player` 的 Web Audio 音效链）。
  * 本服务的职责是把「JS 里的播放状态」投影成系统可见的媒体会话，并反向把
@@ -45,7 +39,6 @@ import kotlinx.coroutines.launch
  */
 class PlaybackService : android.app.Service() {
 
-  private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private lateinit var registry: PortRegistry
   private lateinit var mediaSession: MediaSessionCompat
   private var foregroundStarted = false
@@ -53,11 +46,21 @@ class PlaybackService : android.app.Service() {
   /** `refreshNotification()` 的批次合并标记（见该方法的注释）；sink 回调可能来自 IO 线程，故 @Volatile */
   @Volatile private var refreshScheduled = false
   private val mainHandler = Handler(Looper.getMainLooper())
+  private val demoteAfterPause = Runnable {
+    if (foregroundStarted && !registry.mediaSession.snapshot().isPlaying) {
+      stopForeground(STOP_FOREGROUND_DETACH)
+      foregroundStarted = false
+      runCatching {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
+      }.onFailure { Log.w(TAG, "paused notification failed: ${it.message}") }
+    }
+  }
 
   /** 通知栏歌词（`player.isShowMediaSessionLyric`）与展开态第二行 */
   @Volatile private var lyricLine: String? = null
   @Volatile private var lyricNext: String? = null
   @Volatile private var lyricEnabled: Boolean = true
+  @Volatile private var metadataDurationMs: Long = -1
 
   private val sessionSink = object : MediaSessionSink {
     override fun onMetadataChanged(metadata: MediaMetadataSnapshot?) {
@@ -68,6 +71,11 @@ class PlaybackService : android.app.Service() {
     override fun onPlaybackStateChanged(state: String) {
       applyPlaybackState(state)
       refreshNotification()
+      mainHandler.removeCallbacks(demoteAfterPause)
+      if (state != "playing") {
+        // 切歌时也会短暂经过 paused；不要因此在后台退出前台服务。
+        mainHandler.postDelayed(demoteAfterPause, PAUSE_DEMOTION_DELAY_MS)
+      }
     }
 
     override fun onPositionChanged(durationMs: Long, positionMs: Long, playbackRate: Float) {
@@ -111,7 +119,6 @@ class PlaybackService : android.app.Service() {
     registry.mediaSession.attachSink(sessionSink)
     AppGraph.playbackService = this
     AppGraph.bindNotification(AppNotificationPort(this, registry))
-    registry.audioFocus.onFocusChange { event -> onAudioFocusChanged(event) }
     Log.i(TAG, "PlaybackService created")
   }
 
@@ -133,24 +140,25 @@ class PlaybackService : android.app.Service() {
     }
     // 满足 startForegroundService 的 5s 规则：先以"暂停"通知进入前台，再等 JS 推状态
     ensureForeground()
-    return START_STICKY
+    // 音频与控制回调都属于 WebView 进程；进程被杀后单独重启服务无法恢复播放，
+    // 反而会留下没有控制目标的媒体通知。等用户重新打开应用时再正常创建服务。
+    return START_NOT_STICKY
   }
 
   override fun onDestroy() {
     Log.i(TAG, "PlaybackService destroyed")
+    mainHandler.removeCallbacks(demoteAfterPause)
+    foregroundStarted = false
+    runCatching {
+      stopForeground(STOP_FOREGROUND_REMOVE)
+      getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+    }.onFailure { Log.w(TAG, "notification cleanup failed: ${it.message}") }
     runCatching { registry.mediaSession.attachSink(null) }
     runCatching { mediaSession.isActive = false; mediaSession.release() }
     if (AppGraph.playbackService === this) AppGraph.playbackService = null
     AppGraph.bindNotification(null)
-    scope.cancel()
+    AppGraph.releaseBackgroundRuntime()
     super.onDestroy()
-  }
-
-  override fun onTaskRemoved(rootIntent: Intent?) {
-    // 用户从最近任务划掉 App：若正在播放，保留会话（R-09 的核心体验）；否则自清理
-    if (registry.mediaSession.snapshot().isPlaying) return
-    stopSelfSafely()
-    super.onTaskRemoved(rootIntent)
   }
 
   // ---------------------------------------------------------------- media session
@@ -172,33 +180,20 @@ class PlaybackService : android.app.Service() {
    * 会把它转成 `[2, cbName, [action, value]]` 推回 WebView。
    */
   private fun control(action: MediaAction, value: Double? = null) {
-    when (action) {
-      MediaAction.PLAY -> scope.launch { registry.audioFocus.requestFocus() }
-      MediaAction.PAUSE, MediaAction.STOP -> scope.launch { registry.audioFocus.abandonFocus() }
-      else -> Unit
-    }
+    // 实际音频由 WebView 播放，Chromium 自己管理焦点；再申请一次会抢掉它的焦点。
     registry.mediaSession.dispatchControl(action, value)
     Log.d(TAG, "control -> ${action.jsName} ${value ?: ""}")
   }
 
-  private fun onAudioFocusChanged(event: AudioFocusEvent) {
-    // 焦点变化只把事件转给 JS，由 JS 决定暂停/降音量（避免原生与 Web 双头决策）。
-    // JS 侧的 `audio.onFocusChange` 订阅走 AudioModule → AudioFocusManager 的 listeners，
-    // 不经过这里；这里只负责把「焦点变化」投影成媒体会话动作。
-    registry.mediaSession.dispatchControl(
-      when (event) {
-        AudioFocusEvent.GAIN -> MediaAction.PLAY
-        else -> MediaAction.PAUSE
-      },
-    )
-  }
-
   private fun applyMetadata(metadata: MediaMetadataSnapshot?) {
+    val durationMs = registry.mediaSession.snapshot().durationMs
     val builder = MediaMetadataCompat.Builder()
       .putString(MediaMetadataCompat.METADATA_KEY_TITLE, metadata?.title ?: "")
       .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, metadata?.artist ?: "")
       .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, metadata?.album ?: "")
+      .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs)
     mediaSession.setMetadata(builder.build())
+    metadataDurationMs = durationMs
   }
 
   private fun applyPlaybackState(state: String) {
@@ -218,6 +213,9 @@ class PlaybackService : android.app.Service() {
   }
 
   private fun applyPosition(durationMs: Long, positionMs: Long, playbackRate: Float) {
+    if (durationMs != metadataDurationMs) {
+      applyMetadata((registry.mediaSession as? com.anylisten.ports.media.MediaSessionPortImpl)?.metadataSnapshot())
+    }
     val snapshot = registry.mediaSession.snapshot()
     val stateCode = if (snapshot.isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
     mediaSession.setPlaybackState(
@@ -412,6 +410,7 @@ class PlaybackService : android.app.Service() {
     private const val CHANNEL_ID = "anylisten.playback"
     private const val NOTIFICATION_ID = 1001
     private const val SESSION_TAG = "AnyListenSession"
+    private const val PAUSE_DEMOTION_DELAY_MS = 5_000L
 
     const val ACTION_PREFIX = "com.anylisten.app.action."
 
@@ -425,6 +424,8 @@ class PlaybackService : android.app.Service() {
     const val ACTION_STOP = "${ACTION_PREFIX}STOP"
 
     fun start(context: Context, action: String = ACTION_START) {
+      // 服务已存在时，状态回调会更新前台通知；重复调用系统启动接口在后台会被拒绝。
+      if (action == ACTION_START && AppGraph.playbackService != null) return
       val intent = Intent(context, PlaybackService::class.java).setAction(action)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
     }

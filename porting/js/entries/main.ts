@@ -47,6 +47,8 @@ import { initWorkers } from '@ui/worker'
 
 import MobileApp from '../ui/MobileApp.svelte'
 import { tm } from '../ui/i18n'
+import { withIpcCallbacks } from '../ui/ipc/callback-client'
+import { installPlaybackErrorNotify } from '../ui/player/errorNotice'
 
 // 3 个子 worker 用 `?worker&url`：让 vite 把它们**各自打成独立的 worker chunk**，
 // 只把 URL 交给 core-worker。不能写成 `new URL('./x.ts', import.meta.url)` 再取 `.href`
@@ -243,7 +245,7 @@ window.__anylisten_ipc_init__ = (options: {
     void options.onLogout
     void options.onFailed
 
-    options.onConnected(msg2call.remote)
+    options.onConnected(withIpcCallbacks(msg2call.remote as unknown as AnyListen.IPC.ServerIPC))
   } catch (err) {
     options.onFailed(err instanceof Error ? err.message : String(err))
   }
@@ -284,6 +286,7 @@ if (!root) {
 
   // UI 侧模块注册与 IPC 接线：必须在 mount 之后，组件求值时依赖这些单例已就绪
   initNotify()
+  installPlaybackErrorNotify()
   registerModules()
   try {
     connectIPC()

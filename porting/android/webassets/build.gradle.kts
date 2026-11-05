@@ -41,12 +41,15 @@ kotlin {
  */
 val projectRoot = rootProject.projectDir                 // porting/android
 val jsProjectDir = projectRoot.resolve("../js")          // porting/js
-val jsDistDir = jsProjectDir.resolve("dist")
+val jsDistDir = jsProjectDir.resolve(providers.gradleProperty("jsDistDir").orElse("dist").get())
 val placeholderDir = projectDir.resolve("placeholder")
 val appWebAssetsDir = projectRoot.resolve("app/src/main/assets/web")
 val targetSpaDir = appWebAssetsDir.resolve("spa")
 
 val skipWeb = providers.gradleProperty("skipWeb").map { it.toBoolean() }.orElse(false)
+if (providers.gradleProperty("jsDistDir").isPresent && !skipWeb.get()) {
+  throw GradleException("自定义 jsDistDir 必须配合 -PskipWeb=true，并事先完成前端构建")
+}
 
 /**
  * `-PcleanJsDist=true`：跑 pnpm 之前先删掉 `porting/js/dist`。

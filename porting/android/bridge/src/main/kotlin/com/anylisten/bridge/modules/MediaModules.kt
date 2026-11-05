@@ -9,6 +9,8 @@ import com.anylisten.ports.PortException
 import com.anylisten.ports.PortRegistry
 import com.anylisten.ports.media.MediaAction
 import com.anylisten.ports.media.MediaMetadataSnapshot
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * `mediaSession.*` —— §4.6 / §9.1 冻结签名。
@@ -36,7 +38,16 @@ class MediaSessionModule(private val registry: PortRegistry) : BridgeModule {
       null
     }
     "setPlaybackState" -> {
-      registry.mediaSession.setPlaybackState(args.str(0))
+      val state = args.str(0)
+      withContext(Dispatchers.Main) {
+        registry.mediaSession.setPlaybackState(state)
+        if (state == "playing") {
+          registry.power.startForegroundService("com.anylisten.app.action.START")
+          registry.power.setWakeLock(true)
+        } else {
+          registry.power.setWakeLock(false)
+        }
+      }
       null
     }
     "setPosition" -> {

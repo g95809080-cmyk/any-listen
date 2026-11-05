@@ -3,7 +3,7 @@
  *
  * 分两段：
  * 1. **产物检查** —— `dist/` 里该有的文件都在、体积合理（防止"构建成功但产物是空壳"）
- * 2. **行为检查** —— 用同一份 vite 配置打出一个 Node bundle（`dist/smoke/smoke.mjs`），
+ * 2. **行为检查** —— 用同一份 vite 配置打出一个 Node bundle（`node_modules/.cache/anylisten-smoke/smoke.mjs`），
  *    跑移植层的 shims / Ports / Store，并与 Node 原生实现逐字节比对
  * 3. **sql.js 检查** —— 直接用真实依赖建表/插入/查询/export，验证 SqlitePort 的底座可用
  */
@@ -14,7 +14,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-const DIST = path.join(ROOT, 'dist')
+const distArg = process.argv.find((arg) => arg.startsWith('--dist='))
+if (distArg === '--dist=') throw new Error('--dist 不能为空')
+const DIST = distArg ? path.resolve(ROOT, distArg.slice('--dist='.length)) : path.join(ROOT, 'dist')
 
 const failures = []
 const notes = []
@@ -319,7 +321,7 @@ const smokeConfig = path.join(ROOT, 'scripts/smoke.vite.config.mjs')
 const { build } = await import('vite')
 await build({ configFile: smokeConfig, logLevel: 'warn' })
 
-const smokeModuleUrl = new URL(`file://${path.join(DIST, 'smoke/smoke.mjs').replace(/\\/g, '/')}`)
+const smokeModuleUrl = new URL(`file://${path.join(ROOT, 'node_modules/.cache/anylisten-smoke/smoke.mjs').replace(/\\/g, '/')}`)
 const { runSmoke } = await import(smokeModuleUrl.href)
 const { results, nativeCalls } = await runSmoke()
 for (const item of results) {

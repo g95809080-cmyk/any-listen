@@ -9,11 +9,13 @@
     back = false,
     onback,
     actions,
+    search = false,
   }: {
     title: string
     back?: boolean
     onback?: () => void
     actions?: Snippet
+    search?: boolean
   } = $props()
 </script>
 
@@ -29,8 +31,8 @@
   {:else}
     <span class="ab-pad"></span>
   {/if}
-  <h1 class="ab-title">{title}</h1>
-  <div class="ab-actions">
+  <h1 class="ab-title" class:compact={search}>{title}</h1>
+  <div class="ab-actions" class:search-actions={search}>
     {@render actions?.()}
   </div>
 </header>
@@ -86,4 +88,6 @@
     gap: 4px;
     align-items: center;
   }
+  .ab-title.compact { flex: none; }
+  .ab-actions.search-actions { flex: 1 1 auto; min-width: 0; }
 </style>

@@ -131,7 +131,9 @@ export function connectClient({ port, winType = 'main' }: ConnectOptions): Serve
   port.start()
 
   registerSocket(socket)
-  socketEvent.new_socket(socket)
+  // TypeScript 指向上游 ws 类型；Android 构建实际注入的是 MessagePort 虚拟 socket。
+  const androidSocketEvent = socketEvent as unknown as { new_socket(value: ServerSocket): void }
+  androidSocketEvent.new_socket(socket)
   // 本监听器注册在 `rendererEvent` 之后，而 `Event.emit` 按注册顺序**同步**遍历，
   // 所以跑到这里时上游那个监听器已经把 `socket.onMessage` 装配好了。
   offNewSocket?.()

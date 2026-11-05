@@ -23,7 +23,10 @@ export default defineConfig({
   publicDir: false,
   build: {
     target: 'esnext',
-    outDir: path.join(ROOT, 'dist/smoke'),
+    // 不写进 dist：Gradle 会把 dist 根拍平拷进 APK。虽然 syncWebAssets 已排除
+    // smoke/**，但产物仍会触发「dist 根出现意外条目」告警，且容易在规则变动时误打包。
+    // 放到已经被 gitignore 的 node_modules 缓存目录，构建产物与交付目录彻底分离。
+    outDir: path.join(ROOT, 'node_modules/.cache/anylisten-smoke'),
     emptyOutDir: false,
     minify: false,
     sourcemap: false,

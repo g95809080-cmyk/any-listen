@@ -1050,3 +1050,296 @@ LX Music List Transform …），名称、中文描述、版本号、安装按�
 才出结果，期间商店显示「加载中」；若 i18n 两个请求没回来，描述会显示成 `description` 键名
 （文案降级，不影响安装）。**已记入待排期**：给 `mirrorRequest` 加整体 deadline、或对
 `Invalid list data` 也触发镜像回退、i18n 失败不阻塞列表渲染。
+
+---
+
+## 16. 接手后的修复与验收（2026-11-04）
+
+本轮实际运行了扩展、备份和后台播放链路，发现先前的功能门禁覆盖不足。以下结论限定在列出的设备和场景；前文的历史通过结论不代表本节未覆盖项目也已通过。
+
+| 项目 | 结果 |
+|---|---|
+| 交付 APK | `porting/android/app/build/outputs/apk/debug/app-debug.apk`，20,982,277 B；SHA-256 `9c417b77dda8276345fad8d7a21c36b145230106ad0b1dcfdb7076951f7bbf9d`；入口 `main.DgAcFIhD.js` |
+| 真机 | Xiaomi 2211133C / Android 16；已安装上述 APK，设备内文件 SHA-256 与本地一致 |
+| 模拟器 | API 36、x86_64，使用只读 AVD 的临时会话；不使用真机数据进行覆盖恢复 |
+| 上游 | `source/` 保持干净，HEAD 为 `c8f40eab05021735b969e5991e6ec2f2c63e83b8` |
+
+### 16.1 实际功能
+
+- **扩展与在线音乐**：真机从商店安装并启用 `Online Metadata`、`GD音乐台`。修复 `.alix` 实际为 gzip 压缩包但没有 gzip 后缀时解压失败，以及 QuickJS 沙箱中消息数组、二进制、Promise 和隔离上下文方法的跨边界传递。真机曾用 `GD音乐台` 搜索“周杰伦”，获得歌曲结果并播放“屋顶”，播放进度和歌词均有变化；最终包再次搜索获得结果。部分第三方接口出现 HTTP 400/503；这不代表所有音源均可用。
+- **移动端搜索**：在线页新增搜索输入框，保留曲库、在线、设置三个底部入口；搜索源改为横向滚动。真机实际布局中搜索框高 44dp，搜索源名称可读，清除操作能够清空输入和搜索参数。截图见 `artifacts/qa-final-online.png`。
+- **备份恢复**：模拟器导入一首 WAV，导出包含该歌曲的 `.alcfg` 列表备份，移除曲目，再从备份恢复；界面显示导入完成且曲目重新出现。设置备份在界面中标为暂不可用。本轮未在真机覆盖恢复。
+- **后台与媒体控制**：真机播放本地测试曲目，退回桌面后连续自动切换两首，系统出现前台媒体服务与通知；模拟器验证暂停 5 秒以上后释放唤醒锁、退出前台状态，随后通过系统播放键恢复为 PLAYING，前台服务和唤醒锁重新生效。播放由 WebView 管理音频焦点，避免原生层重复抢焦点。该测试不等于 30 分钟息屏保活验证。
+- **WebDAV（本条历史结论已撤回）**：当时临时服务的日志显示快照 PUT 和同步成功，但 §18 复验发现这些 PUT 的正文为零字节，日志不能证明上传了有效快照。此前的响应头大小写、原始字节和回调适配修复仍保留；有效上传与跨设备合并以 §18 的复验为准。
+
+### 16.2 检查结果与边界
+
+- `core-ports:testDebugUnitTest` 的两项 tar 测试通过；当时的移植层 TypeScript 检查、`scripts/smoke.mjs` 和 `check-webdist.mjs --assets` 通过。当时工具把 380 条诊断归为上游；后续发现其中 1 条属于移植层，现已修复检查器及该错误，最新结果见 §19。
+- 当前包在已有依赖的工作区构建；此前版本有干净目录重建记录，最新修改尚未重新进行干净重建。release 包未验收。
+- 30 分钟息屏长测后由用户验收通过；从最近任务划掉后继续播放、真实 WebDAV 服务及跨设备合并、Android 10–15 真机和横屏/平板仍未覆盖。其他文件浏览器和歌词提示问题见前文记录。
+
+---
+
+## 17. 模拟器继续验收（2026-11-04）
+
+本节使用本机 API 36 / x86_64 模拟器的只读 AVD 临时会话，未改动真机曲库。前文 §16 是当时的历史记录；本节的结果只覆盖下面列出的版本和场景。APK 路径随后已被新包覆盖，当前产物以 §19 为准。
+
+| 项目 | 结果 |
+|---|---|
+| Debug APK | `porting/android/app/build/outputs/apk/debug/app-debug.apk`，19,919,299 B；SHA-256 `9697c6fd8d147a59040bc0015cdb94b4150cf3e912064d1d1a2252ead4f2f2be` |
+| Release APK | `porting/android/app/build/outputs/apk/release/app-release.apk`，8,589,441 B；SHA-256 `d0615a54cd4cdaf0f1db89c8ceda674fc23bb9cb5c9fc1b0ed78e2307e2d06e4`；已混淆、裁剪资源，使用 debug 签名，模拟器基本播放与退出已验收 |
+| 真机 | 本轮未连接或安装；§16 中的手机仍为当时安装的旧版本 |
+| 上游 | `source/` 保持干净，HEAD 为 `c8f40eab05021735b969e5991e6ec2f2c63e83b8` |
+
+### 17.1 本轮结果
+
+- **界面退出后播放**：将播放中的 WebView 与桥改为可脱离 Activity 的运行时。当前 Debug 和 release 包在模拟器上验证：按返回退出界面后，`ViewRootImpl` 为 0，系统媒体键可暂停；release 恢复播放后前台服务与唤醒锁生效，重新打开界面保留播放状态，再暂停退出可完成落盘。上一版 release 还验证了暂停超过 5 秒后前台服务降级和唤醒锁释放，并连续退出、重进两次，未见崩溃。当前 release 的记录见 `artifacts/qa-final-release-media.txt` 和 `artifacts/qa-final-release-log.txt`。
+- **息屏长测**：此前的基线包 SHA-256 `e572bdf6dc0b0ecf97a6529b16ddae1325da44b56272039580f36f4d664018d6` 已连续息屏超过 30 分钟，进度持续前进并在曲目结束后循环。后续候选 Debug 包 SHA-256 `b164323f625a17129ee28db3be5ea9848bcc08c5bb6077b1b24317049046cca6` 在界面退出、屏幕关闭后播放 1,801 秒，音轨进度从约 46.4 秒推进到 1,847.9 秒，前台服务和唤醒锁持续有效，记录见 `artifacts/qa-final-headless-soak.csv`。**此长测不属于上表的最终包**：最终包在该候选版之后补入 §18 的 WebDAV 正文修复与非空歌单导入入口，并做了短时播放回归。模拟器使用静音测试音轨和无声输出，不等于真实设备的声音质量或耗电测试。
+- **长测裁决（2026-11-05）**：用户已确认上述 30 分钟息屏长测验收通过，后续不再列为待办或复测要求。
+- **最近任务关闭**：最终 release 播放时，在模拟器最近任务的应用图标菜单中选择 `Close`，应用卡片消失、`ViewRootImpl` 为 0，前台服务仍在，Android 音频输出状态为 `started`。系统媒体键暂停后再恢复，5 秒后再次暂停，媒体会话位置从约 136.97 秒推进到 142.24 秒。直接上滑手势未能在该模拟器触发，故只确认菜单关闭路径。
+- **媒体信息**：系统媒体元数据补充总时长；模拟器媒体会话从 3 项变为 4 项。暂停位置由单调时钟推进，实测音轨约 13.8 秒时系统会话显示约 14.5 秒；暂停后唤醒锁释放。
+- **落盘与退出**：数据库补上后台、内存紧张和退出时的强制落盘监听，数据库与设置文件的写入按文件串行，写盘期间的新修改会继续写入。退出界面时等待数据库和设置工作线程回执，最多等待 10 秒；模拟器实际更改主题后立即退出，收到两个回执，重新打开后主题仍为修改后的值。自动化测试验证了后台提前落盘、并发写入、失败后重试和退出回执。
+- **原生选择器**：修复 Activity 重建后端口可能继续引用旧选择器，以及从后台线程启动选择器的问题。模拟器首次打开和取消正常；自动审核拦截了重开页面后再次自动调用选择器的组合命令（返回 `blocked by policy`），该项尚未完成自动复测。
+- **同步冲突**：离线冒烟测试覆盖双方新增、单侧删除和曲目元数据更新的快照合并，以及首次同步冲突的合并和取消选项；不喜欢规则也覆盖了增删与去重。这是合并规则测试，不等同于真实 WebDAV 跨设备端到端测试。
+- **构建**：5 项 `core-ports` 单测、1 项 bridge 正文单测通过；移植层 TypeScript strict 检查、针对隔离产物的 JS 冒烟和 `check-webdist.mjs --assets` 通过。最终前端产物位于 `artifacts/qa-build-js-import-final`，避免触碰此前受限制的旧清理目录；Debug 和 release 均在原项目路径完整重编。复现命令及 Windows 中文路径注意事项见 `docs/BUILD-from-source.md` §6。
+
+### 17.2 尚未覆盖
+
+30 分钟息屏长测已由用户确认通过；除此之外，新版从最近任务直接上滑划掉后的实测、真机的新版后台播放、真实 WebDAV 服务和跨设备同步、Android 10–15 设备以及横屏／平板仍未覆盖。历史记录中的部分目录双击、无歌词提示等体验问题，本轮未重新验收。模拟器内存有限，本轮只运行一个设备。
+
+---
+
+## 18. WebDAV 与非空曲库导入复验（2026-11-04）
+
+§16 的旧 WebDAV 上传结论已撤回：逐字节检查发现 HTTP 桥只接受二进制正文，上游传入文本时被当成空正文。原生桥现在以 UTF-8 编码字符串、保留二进制并拒绝不支持的类型；测试覆盖中文、日文、韩文、二进制和空值。本地测试服务也对空快照元数据返回错误，避免再次把空上传当作成功。
+
+当时的 Debug 包在同一只读模拟器的两个独立 Android 用户空间中分别创建数据、连接本地 WebDAV 测试服务：第一个用户上传歌单，第二个用户导入自己的曲目并选择合并；第一个用户在未读取远端新曲目前再导入另一首并同步，随后第二个用户同步。两边界面最终都显示 `anylisten-sync-beta-qa`、`anylisten-sync-gamma-qa` 和 `anylisten-qa-31min`。服务实际收到的三方合并快照为 743 字节、快照信息为 307 字节。两个用户切换时先停止前一个用户的应用，因为本地服务端口共用；这是顺序同步，不是同时运行。
+
+证据：`artifacts/qa-webdav-dual-result.json`、`artifacts/qa-webdav-dual.log`、`artifacts/qa-webdav-two-users.png`。测试服务与模拟器用户都是临时环境，此结果验证歌单元数据合并，不代表真实云服务或两台实体设备已验收，也不表示本地音频文件会被同步。
+
+验收中还发现非空歌单没有继续导入的入口。现在可写的非空歌单顶栏提供「导入」按钮；模拟器从已有歌曲的列表再次导入并成功参与上述合并。空列表仍保留原来的导入引导。当时的 release 包已在模拟器确认按钮显示，导入动作由当时的 Debug 包完成。
+
+---
+
+## 19. 扩展配置与异常恢复（2026-11-05）
+
+本节继续使用本机 API 36 / x86_64 只读模拟器，不覆盖真实设备数据。调试包 SHA-256 为 `97fefdf2140f07d76af536dd51ccf795c3f0f8c3ef4e42a0412a154b42a6bd59`（19,921,215 B）；release 包 SHA-256 为 `0cabfe6cf1ad240479cc13bb0ae1e5db2354f3898bf4ce2126e5f117add6c6fd`（8,591,037 B，调试签名）。两包内前端入口同为 `main.DgZpUd8K.js`，其 SHA-256 均为 `8131802f9f37d1128426b4cabb2990070d5c9d3a23c7265ff15605420c8880b0`。
+
+- **扩展配置**：扩展运行在独立 Worker 中，原先同步 Store 的缓存并未预载该 Worker 的配置。现按扩展配置路径懒加载，保存调用返回前等待落盘；同一扩展的并发设置更新按顺序合并，不同扩展互不阻塞。模拟器用预先保存的内置 WebDAV 配置验证：页面实际 DOM 中两项原值均为 `true`；只改一项后，磁盘及正常退出、重开后的页面均为 `false / true`。上游设置页仍不等待保存调用返回；修改后立即关闭或强停，仍可能发生在请求送达扩展 Worker 之前。并发不同字段、写盘失败恢复、慢读与卸载重装缓存失效由 JS 冒烟测试覆盖；未声称并发已在实体设备验收。记录见 `artifacts/qa-extension-config-current.txt`。
+- **复选框取证更正**：模拟器辅助功能树把该 WebView 的复选框 `checked` 一律报告为 `false`，即使 DOM 实际值为 `true`。因此此前仅据辅助功能树得出的旧包重启状态不可靠，已撤回；扩展缓存问题的判断依据为代码路径和针对性测试。
+- **文件浏览**：普通导入和备份保存时单击进入文件夹；目录选择模式仍可单击选中、双击进入。模拟器实际导入音轨、保存 419 字节的列表备份，并在选定的目录导出 TXT 成功。
+- **异常恢复**：模拟器将播放进程杀死后，旧包重新启动了没有音频的媒体服务并留下通知；当前 Debug 包在同样场景下 15 秒后没有重启服务或残留通知。另将页面导航到未监听的本地端口，页面自动恢复至曲库；一次内存回收事件分别收到 core 与 db 各一个回调。记录见 `artifacts/qa-sticky-restart-before.txt`、`artifacts/qa-sticky-restart-after.txt`、`artifacts/qa-recover-result.txt`。
+- **暂停后退出通知**：复现“播放→暂停→等待超过 5 秒→双返回退出”时，旧包在服务已经销毁、`ViewRootImpl=0`、媒体会话已清空后仍遗留 `id=1001` 的暂停通知。原因是暂停降级使用 `STOP_FOREGROUND_DETACH`，而服务销毁路径没有再次移除通知。现在 `PlaybackService.onDestroy()` 会先关闭通知刷新、无条件 `stopForeground(STOP_FOREGROUND_REMOVE)` 并取消通知。修复后的 Debug 和 release 包均在相同步骤退出后确认通知为空、服务为空、媒体会话为 `NONE`，记录见 `artifacts/qa-pause-exit-notification-beforefix.txt`、`artifacts/qa-pause-exit-notification-fixed.txt` 和 `artifacts/qa-pause-exit-notification-release.txt`。
+- **检查**：Debug / release 均在原目录完整重编；前端产物与 APK assets 一致，移植层 TypeScript strict 0 错误，上游另有 379 条诊断未计入门禁。JS 冒烟覆盖扩展配置、同步、数据库及文件写入；类型检查器现在也会在自身启动失败时返回失败。
+- **长测**：修复前的 Debug 包 `415097e4…` 在最近任务中直接上滑移除后完成了 1,800 秒息屏播放；34 次采样均为前台服务 `true`、唤醒锁 `true`、息屏 `true`、音频输出 `true`，PID 始终为 3319，音轨从约 3.6 秒推进到 1,803.9 秒，记录见 `artifacts/qa-current-apk-soak.csv`。该 30 分钟息屏长测已由用户确认验收通过，后续不再作为待办或复测要求。本次通知清理改动只影响服务销毁路径，修复后的两包完成了短时播放、暂停降级和退出清理回归；release 在播放中退出界面后仍保持前台服务、唤醒锁和音频输出，记录见 `artifacts/qa-final-release-playback-exit.txt`。模拟器使用静音音轨与无声输出；采样通过 WebView 调试连接读取音轨时间，不能替代真机保活、声音或耗电测试。
+
+自动审核拦截了“强制停止、重启并读取扩展设置”的组合命令，原因仅显示 `blocked by policy`；该路径尚未复测。当时的 release 已完成模拟器短时播放与退出通知清理回归；当前候选包的复验范围见 §21。新版真机、真实 WebDAV 服务和 Android 10–15 仍需验收。
+
+---
+
+## 20. 播放页与在线播放修复（2026-11-05）
+
+本轮使用 API 36 / x86_64 模拟器，验证设备视口为 412×915 CSS。当时的 Debug 候选包 SHA-256 为 `7a64142627aea7c63da644d1004373a6bf0b0682cc715b02e8146d7dff6c7ad7`（20,939,677 B），包内入口为 `main.Ck1444r6.js`；当时 release 未重打。
+
+本节是 §21 之前的中间候选，保留当时的修复与测试记录；当前交付物的指纹和后续修复范围以 §21 为准。
+
+### 20.1 播放页裁切与状态文字
+
+- `.left-info` 取消 40dvh 高度上限，信息区不再依赖内部滚动或被 `contain: paint` 静默裁切。实测歌曲信息 `clientHeight = scrollHeight = 96`，专辑行完整显示。
+- `.footer-content` 为绝对定位的状态文字保留 20px 底部空间。暂停态实测状态文字矩形为 `y=843..859`，右侧辅助控制键为 `y=795..839`，两者不相交。
+- 模拟超长专辑名后，信息区扩展到 240px，`clientHeight = scrollHeight = 240`，页面仍保持 915px 视口，控制区未被裁掉。截图见 `artifacts/qa-playdetail-long-album-fix.png`。
+
+### 20.2 在线播放与 `source not found`
+
+`source not found` 是上游 `handleFindMusic()` 在自身 URL 与全部搜索回退都失败后的统一异常。复现时 GD 网易云、JOOX 等第三方请求确有 503/400/空结果；主机随后重试同一批请求又能取得有效 URL，说明外部音源短时故障是触发因素。应用侧做了三项修正：
+
+- GET/HEAD 遇到 502/503/504 时退避重试两次（约 400ms、1200ms），`retryNum: 0` 仍保持单次请求。冒烟测试覆盖 `503 → 503 → 200`。
+- 播放页和迷你播放器不再直接展示 `source not found` / `Get url failed, no source` / `Failed to obtain lyrics`，其中音源失败映射为「在线音源暂时不可用，请稍后重试」。
+- 第三方持续不可用仍会导致自动换歌耗尽；这不属于应用能保证的外部服务可用性。
+
+在 GD 网易云搜索 `Shape of You` 取得 20 条结果后，单曲点击、`Play all`、`Shuffle` 均能起播；控制台未再出现 `unsupported source`，也未出现 `source not found`。扩展日志仍有 GD 酷我 400、JOOX 回退等第三方错误，未形成未捕获 Promise 拒绝。
+
+### 20.3 搜索页 `unsupported source`
+
+上游 `playOnlineList()` 起播后会无条件后台调用 `fetchOnlineListDetailAll()`，而后者只支持 `songlist` / `topSongs`；搜索页的 `source: 'search'` 因而稳定抛 `unsupported source`。搜索结果是快照，不需要完整列表补全。移植层新增 A-29 覆写：`search` 来源直接使用当前结果建立播放队列，其余来源继续调用上游实现。实测 `Play all`、`Shuffle` 与搜索结果单曲点击均正常，未捕获异常为 0。
+
+### 20.4 门禁与剩余边界
+
+- 移植层 TypeScript strict 检查通过，0 错误；JS 冒烟通过；`check-webdist.mjs --assets` 为 `VERDICT: OK`。
+- 当前日志中的扩展配置 `ENOENT` 是首次读取尚无配置文件的预期路径，随后可正常保存；本轮未发现 `SQLITE_CANTOPEN`，也没有 `FATAL EXCEPTION`。
+- 未强制模拟持久 503 后观察中文错误文案的停留过程；该映射由代码与构建产物检查覆盖，不以本轮实测冒充。
+- 本节截图对应的包仍采用浮动「多选」入口；该遮挡已在 §21 的后续候选包中修复。收件列表、长标题、极矮屏等边界仍需按设备矩阵继续覆盖。
+
+---
+
+## 21. 搜索操作区与音源异常文案（2026-11-05）
+
+本轮继续使用 API 36 / x86_64 模拟器，设备视口为 412×915 CSS。Debug 包 SHA-256 为 `3f26a80a35839c6e52fa171fbb3f1316066523c8bdc88914ea9fe7e26abf3ee4`（20,939,917 B）；release 包 SHA-256 为 `ba5fb835ee317eb4f5f78c3e152aae838bb43cc31d390c3be29e2253f415dcfd`（8,592,561 B，调试签名）。两包内前端入口同为 `main.BnKFe8gR.js`，均来自 `artifacts/qa-build-js-timeout-status-20261105`。release 已在模拟器实装并验证在线单曲播放；当前设备随后装回 Debug 包，设备内 APK 指纹与本地一致。
+
+### 21.1 搜索页操作区
+
+- `MusicList/List/index.svelte` 的「多选」入口和多选操作条移到歌曲列表容器之外，作为独立布局行；`mobile.less` 取消 `.mobile-select-bar` 的绝对定位。歌曲列表不再给悬浮按钮预留视觉缺口，滚动到列表尾部也不会被按钮覆盖。
+- 实测歌曲列表底边为 `631.0476px`，`Select` 顶边为 `635.0476px`，`overlap = false`。进入多选后，计数、全选和退出都在列表下方独立一行，列表本身仍可正常滚动和点击。
+- 搜索页单曲点击、`Play all`、`Shuffle` 均完成起播回归；控制台无 `unsupported source`。
+
+### 21.2 在线音源报错与超时
+
+- 新增 `ui/statusText.ts`，统一处理播放状态文案。`source not found`、`Get url failed`、`Get music url failed` 不再原样显示，改为“在线音源暂时不可用，请稍后重试”；上游 `find music timeout` 改为“在线音源响应超时，请检查网络后重试”。
+- 中英繁三种文案均在 `ui/i18n.ts` 中补齐。当前模拟器为 `en-us`，断网实测在第 60 秒显示 `Online source timed out. Check your network and try again.`，未再出现英文原始异常；测试结束后已恢复网络并确认系统连通性状态为 validated。
+- GET/HEAD 对 502/503/504 的退避重试仍保留，JS 冒烟覆盖 `503 → 503 → 200`。本轮没有强制模拟“持续 503”，因此只把单次短时故障重试列为测试覆盖，不声称第三方服务长期不可用时仍能播放。
+- 恢复网络后，release 包在 GD 网易云搜索 `Shape of You`，点击首条结果进入 `PLAYING`；界面显示播放进度与歌词，系统媒体会话状态为 `PLAYING`。第三方音源自身的 400/503 和空结果仍可能出现，应用侧只能重试并给出可理解的状态文案。
+
+### 21.3 门禁与边界
+
+- 移植层 TypeScript strict 检查 0 错误；JS 冒烟通过；`check-webdist.mjs --assets` 为 `VERDICT: OK`；Debug 与 release 均从同一前端 stage 成功出包。
+- 30 分钟息屏长测已由用户验收通过，不再作为待办或复测要求。
+- 未覆盖新版真机、Android 10–15、横屏、平板/折叠屏、外接指针和本地 WAV 播放回归；搜索操作条也只在 412 CSS 宽度实测，393 宽真机上多选文案是否拥挤尚未复验。
+
+---
+
+## 22. 真机歌词与在线音源复验（2026-11-05）
+
+本轮使用 Xiaomi 2211133C / Android 16 真机，CSS 视口 393×873，设备 dpr 2.75；无线调试地址为 `192.168.1.39:41187`。Debug 包 SHA-256 为 `5c1a60355a31d44bacb7e419a29f368fc58644c55752b74f889b1bf824b31da2`（20,940,744 B），入口为 `main.CTyMuOED.js`。`check-webdist.mjs --assets` 为 `VERDICT: OK`，`source/` 保持干净。按用户裁决，30 分钟息屏长测已验收通过，本节不再重复该测试，也不把它列为待办。
+
+### 22.1 歌词字号、对齐与制作信息
+
+复现截图见 `artifacts/qa-lyric-issue-current.png`。播放详情页的歌词字号只有 **9.84px**，活动行位于左侧 1px 处，视觉上是一条偏左的小字。量到的根因有三处：
+
+- `LyricPlayer.svelte` 用 `winRadio = 根节点宽度 / 1020` 缩放字号，再乘 `(字号设置 / 100 + 0.8) rem`。393px 宽、默认 80% 时得到 `(0.8 + 0.8) × 0.385rem ≈ 9.84px`，桌面比例直接压扁了手机字号。
+- 默认设置为左对齐；`.text-left` 的活动行 `transform-origin: 0%`，并叠加 `scale(1.1)` 和左右不对称 padding。实测活动行宽 427px，超出 393px 视口。
+- 部分音源把 `作词 : 无`、`作曲 : 无`、`制作人 : …` 等制作人员表作为 `[00:00.000]` / `[00:01.000]` 歌词行返回，歌曲开头会把这些行显示成歌词。
+
+修复落在移植层，没有改上游：
+
+- `ui/mobile.less` 将手机歌词字号改为 `clamp(16px, calc(var(--play-detail-lrc-font-size) * 1.72), 24px)`，保留应用内字号设置的变化；文字居中、左右各 20px、活动行 8px 上下留白，活动行 `scale(1.02)` 且 `transform-origin: center`，活动行加粗。
+- 新增 `ui/lyric/filterMetadata.ts`，按中英文制作人员标签过滤带时间戳的元数据行；`ui/overrides/modules/lyric/init.ts` 在歌词初始化前调用它，覆写表登记为 A-30。
+
+真机测得歌词根字号 **16.9221px**、`text-align: center`；活动行矩形约 `x=-3.93, w=400.58, h=37.03`，内层活动文字颜色 `rgb(71, 88, 187)`，长句自动换行且仍在视口内。`作词/作曲/制作人` 行过滤后计数为 0，92 行正常歌词保留；播放到活动行、暂停、恢复时高亮和滚动均正常。最终截图见 `artifacts/qa-final-lyrics-playing.png`、`artifacts/qa-final-lyrics-paused.png`。
+
+### 22.2 在线音源与 `source not found`
+
+`source not found` 的根因已不再归到路由或单一 503：
+
+- 设备上安装的 `online-metadata 0.4.8` 只声明搜索、封面、歌词等能力，**没有 `musicUrl`**，不能单独播放。
+- `lx-api-source-loader 0.1.7` 虽然声明了 `musicUrl`，但没有导入任何 LX 自定义源脚本，播放时实际抛 `No script found to handle this request`；上游聚合后显示为 `source not found`。
+- 安装并启用 `GD音乐台 0.4.3` 后，扩展具备可用的 `musicUrl`。严格网络安全 Debug 包直接播放成功，不需要把 `allowCleartext=true` 作为最终修复。
+
+本轮在新 Debug 包上复验：GD 网易云搜索 `Shape of You` 返回 5 条结果，点击首条后系统媒体会话为 `PLAYING`，进度推进，播放页歌词正常显示和滚动。搜索 `Play all`、`Shuffle`、在线单曲均可用；393px 宽度下进入多选后，操作条位于最后一行歌曲下方，未覆盖歌曲行。播放期间日志没有 `source not found`、`No script found`、`CLEARTEXT` 或 `FATAL EXCEPTION`。在线歌曲的歌词同样经过制作信息过滤，截图见 `artifacts/qa-online-lyrics-fixed.png` 和 `artifacts/qa-final-multiselect.png`。
+
+### 22.3 门禁与剩余边界
+
+- 本轮通过移植层 `pnpm typecheck`（strict，0 错误）、`pnpm build:all`、`pnpm smoke` 和 `node scripts/check-webdist.mjs --assets`；Debug APK 已覆盖安装到真机，设备内 APK 指纹与本地一致。
+- 本轮修复的是手机播放详情的歌词展示和音源选择前置条件。设置项备份/恢复、在线专辑/歌手搜索页、下载（上游关闭）、只读评论、目录选择模式的子目录进入、部分小于 44dp 的触控行，以及 Android 10–15、横屏、平板/折叠屏和外接指针仍未覆盖。
+- 第三方音源自身的 400/503、空结果和长期不可用仍无法由应用保证；`GD音乐台` 只是当前已验证的可播放来源，不是内置音源。
+
+---
+
+## 23. 设置备份、歌词与文件选择收口（2026-11-05）
+
+本轮仍使用 Xiaomi 2211133C / Android 16 真机（无线调试 `192.168.1.39:41187`，393×873 CSS，dpr 2.75）。最终 Debug APK 为 `porting/android/app/build/outputs/apk/debug/app-debug.apk`，20,941,724 B，SHA-256 `2C28DBA46E60477688E354EF8285FE10E13E707C918E476297EAB0F63E7EF740`，入口 `main.D7i_mRkr.js`。设备内 `base.apk` 的 SHA-256 与本地一致，`lastUpdateTime` 为 2026-11-05 11:53:26。
+
+### 23.1 设置备份与恢复
+
+上游备份模块只导出歌单，设置项在 UI 和导入流程里都被禁用。移植层新增 A-31 备份模块和 A-32 类型选择覆写：
+
+- 选中“设置”后，导出文件会同时写入 `songlist` 与 `settings` 两个快照；没有设置快照的旧备份仍可只恢复歌单。
+- 恢复时只接受已知字段，歌单和设置分别合并；未知或只读设置不会覆盖当前配置。
+- 设置类型勾选框恢复可选，默认仍按上游行为只选“列表数据”，需要时再勾选“设置”。
+
+真机实测了勾选设置后的导出、恢复和强停重启：恢复后歌单与设置均保持；`pnpm smoke` 的设置备份用例覆盖了字段筛选、空设置快照和恢复合并。
+
+### 23.2 文件选择
+
+A-23 / A-24 / A-34 把文件浏览器改成触屏语义：
+
+- 文件夹单击进入，不再需要桌面式 400ms 双击窗口；目录选择模式也使用同一动作。
+- 进入目标目录后，「确定」直接使用当前目录，不要求再选中某个子项。
+- 窄屏底栏改为可换行：文件名输入占一行，新建文件夹与取消/确定各占一行。
+
+真机分别打开 TXT 导出与备份保存：默认文件名 `any-listen_list_all.txt`、`any-listen.backup.alcfg`；单击根目录、`Music` 和 `AnyListenTest` 都能一次进入，路径框同步更新，确定按钮可用。修复前「文件名」标签被压成 14px 宽并竖排，`新建文件夹` 与右侧按钮重叠；修复后的视觉证据见 `artifacts/qa-dirpicker-fixed.png` 和 `artifacts/qa-dirpicker-music.png`。
+
+### 23.3 歌词过滤与空白状态
+
+真机当前曲目「晴天 (原唱 周杰伦) - RyaVocal」打开播放详情后，第一行唱词是「故事的小黄花」，开头的标题、`合声`、`合声编写`、`录音助理`、`录音工程`、`混音工程` 等制作信息均未进入歌词。播放到 32 秒时活动行「从出生那年就飘着」为蓝色、轻微放大，歌词根字号 `16.9221px`、居中，滚动位置随播放推进。
+
+过滤规则在原有中英文制作标签基础上补充了：
+
+- 中文制作字段：`合声编写`、`录音助理`、`录音工程`、`混音工程` 等。
+- 开头 3 秒内、长度不超过 80、无标点、形如「歌名 - 歌手」的标题行。
+- 正常唱词中的 `-`、`：` 和中段文字不受影响；回归用例已加入 `pnpm smoke`。
+
+无歌词路径用导入的 12 秒 WAV 验证：进入播放详情先显示「歌词加载中…」，约 1.5 秒后变成「暂无歌词」，没有空白页或英文异常文案。截图见 `artifacts/qa-no-lyrics-state.png`。
+
+### 23.4 在线播放
+
+最终包在 GD 网易云音源搜索「晴天」，结果返回后点击首条，系统媒体会话从 `PAUSED` 进入 `PLAYING`，进度从 0 开始推进；切到结果页后再清空 logcat，单曲起播窗口内没有 `source not found`、`No script found`、`CLEARTEXT` 或 `FATAL EXCEPTION`。当时搜索刷新阶段的内置回退仍会请求 `search.kuwo.cn` / `interface.music.163.com` 等 HTTP 接口并被 Android 明文策略拦截；该问题已在 §24 通过精确域名白名单修复，内置酷我/网易搜索恢复，未列入白名单的域名仍被拒绝，也没有使用全局 `allowCleartext`。`online-metadata` 仍只承担搜索/歌词等能力，LX loader 没有导入脚本时不能播放；这是音源扩展的前置条件，不是播放器故障。播放页和迷你播放器的状态文案已区分缺失音源、LX 脚本未导入、超时和明文网络拒绝。
+
+### 23.5 构建与清理
+
+- `pnpm typecheck`：移植层 strict 通过，0 错误。
+- `pnpm build:all`：通过；入口 `main.D7i_mRkr.js`。
+- `pnpm smoke`：通过，包含歌词制作信息过滤和设置备份恢复，共 53 次原生 Ports 调用。
+- `check-webdist.mjs --assets`：`VERDICT: OK`，dist 与 APK assets 3 项指纹全等。
+- `:app:assembleDebug -PskipWeb=true -PrequireWeb=true`：通过；最终 APK 与设备内 APK 指纹一致。
+- smoke 测试 bundle 已从 `dist/smoke` 移到 `node_modules/.cache/anylisten-smoke`，避免 `dist` 根意外条目进入打包链路。
+
+### 23.6 剩余边界
+
+- 在线专辑/歌手搜索目前没有可工作的扩展实现；宿主 IPC 与 UI 页面也未完成，不应把它描述成“当前扩展已支持、宿主漏接”。
+- 下载功能被上游关闭，评论只能只读；部分列表触控行仍小于 44dp。
+- Android 10–15、横屏、平板/折叠屏和外接指针尚未覆盖；当前验收来自 Android 16 真机和 API 36 模拟器。
+- 第三方音源自身的 400/503、空结果和长期不可用无法由应用保证；内置搜索回退的 HTTP 接口已在 §24 按 34 个精确主机放行，未列入主机仍被拒绝，扩展升级后需要重新核对白名单。文件选择仍依赖文件路径与所有文件访问权限。
+
+---
+
+## 24. 精确明文白名单、内置搜索与歌词可读性（2026-11-05）
+
+本轮复验设备仍为 Xiaomi 2211133C / Android 16（无线调试 `192.168.1.39:41187`，393×873 CSS，dpr 2.75）。最终 Debug APK 为 `porting/android/app/build/outputs/apk/debug/app-debug.apk`，20,942,053 B，SHA-256 `5CB0AD5958D2CFA1C3FC1EF0CD3014A895D9617B8114AE588207F5DA24C92315`，入口 `main.i-PlVHwT.js`。真机 `base.apk` 拉取后大小与 SHA-256 均与本地一致，`lastUpdateTime` 为 2026-11-05 13:04:25。`source/` 保持零改动。
+
+### 24.1 精确域名白名单与内置搜索恢复
+
+`network_security_config.xml` 的 `base-config` 仍为 `cleartextTrafficPermitted="false"`，只增加两组 `domain-config`：
+
+- 回环：`127.0.0.1`、`localhost`，用于 SPA、`/stream` 和 AudioWorklet 的 secure context。
+- 内置 `Online Metadata 0.4.8` 实际使用的 34 个精确主机名，覆盖酷我、网易、酷狗、QQ 音乐、咪咕的搜索、歌词、封面、歌单和评论接口。全部 `includeSubdomains="false"`，没有通配符，也没有全局 `usesCleartextTraffic`。
+
+真机结果：
+
+- `http://search.kuwo.cn/...` 返回 HTTP 200；`http://example.com/` 仍被拒绝，错误为 `CLEARTEXT communication to example.com not permitted by network security policy`。
+- 内置「酷我音乐」搜索「晴天」返回 5 条结果，列表显示 `kw` 标识；证据见 `artifacts/qa-builtin-kuwo2.png`、`artifacts/qa-builtin-kuwo-logcat.txt`。
+- 内置「网易音乐」搜索「晴天」成功；证据见 `artifacts/qa-builtin-netease-logcat.txt`。两份 logcat 中均无 `CLEARTEXT`、`source not found`、`No script` 或 `FATAL EXCEPTION`。
+
+白名单只针对当前扩展版本，升级 `Online Metadata` 后必须重新核对其 HTTP 端点；不要把 `<domain>` 改成通配或打开全局明文。临时排查仍可用 `-PallowCleartext=true` 切到 `_loose.xml`，该包不进入交付。
+
+### 24.2 Toast、加载与播放错误状态
+
+- 上游 `.notify-content` 绝对定位后，`left:50%` 加 `width:auto` 只剩一半可用宽度；393px 真机上提示条被测成 **157px × 118px**，长句被挤成窄柱。`ui/mobile.less` 改为整行宽度、取消最小宽度、限制 `50dvh` 高度并允许内容滚动，位置抬到迷你播放器和标签栏之上。修复后的提示条宽度约等于 `100vw - 32px`；截图 `artifacts/qa-toast-fixed.png` 记录的是宽度修复当次，图中仍可见后续已修掉的加载/错误叠加。
+- 上游 Loading 的 `loading` 与 `error` 各自做 200ms fade，失败切换时会短暂同屏。新增 `html.mobile .loading:has(+ .error) { display:none !important; }` 后，CDP 实测失败态的 `.loading` 为空，`.error` 只显示「加载失败 😢 / 重新加载」。证据见 `artifacts/qa-final-error-state.png`。
+- 播放失败原先只会把一次性的 `statusText` 留在内部，界面继续显示「歌曲链接获取中…」。新增 `ui/player/errorNotice.ts`：`playerEvent.error` 时显示 6 秒 Toast，并把映射后的原因写入常驻状态；迷你播放器和播放页状态栏优先显示该文案，切歌或真正开始播放时清除。真机实测在 Toast 出现当刻同时读到：
+  `mini-main = "晴天 - 夏侯旧梦 在线音源响应超时，请检查网络后重试"`
+  、`status-text = "在线音源响应超时，请检查网络后重试"`；自动跳到下一首后，错误文案已清除并恢复新曲加载状态。截图见 `artifacts/qa-playback-error-persistent.png`，此前的可行动 Toast 见 `artifacts/qa-builtin-failure-toast.png`。
+
+### 24.3 歌词高亮、滚动与可读性
+
+在真机上从 GD 网易云搜索结果点击「晴天 (原唱 周杰伦)」，系统媒体会话进入 `PLAYING`，播放页打开后测得：
+
+- 歌词根字号 `16.9221px`、`text-align: center`，50 行有效歌词，`作词/作曲/制作人` 等制作信息为 0 行。
+- 播放到 `00:41` 时活动行为「随记忆一直晃到现在」（时间戳 39,750ms），活动行颜色 `rgb(64, 79, 168)`，滚动位置 `149px`；暂停在 `00:50` 时活动行为「吹着前奏望着天空」，滚动位置 `240px`，暂停后高亮保留。
+- 未播放歌词原先使用 `--color-300`（`rgb(188,188,188)`），在白底详情页上的对比度约 **1.7:1**，整片歌词几乎不可读。本轮改为 `--color-650`（`rgb(111,111,111)`，白底约 **4.7:1**），活动行/已播放行继续用主题蓝 `--color-primary-dark-200`。修复后未播放行实测 `rgb(111,111,111)`。
+
+最终截图见 `artifacts/qa-final-gd-lyrics.png`（`00:50` 暂停态）；本轮播放窗口的 logcat 为 `artifacts/qa-final-gd-lyrics-logcat.txt`，其中 `source not found`、`No script found`、`CLEARTEXT`、`FATAL EXCEPTION` 均为 0 条。首次取流有一次 `MediaError`，同一 URL 重试后 `onPlaying`；暂停后系统媒体会话为 `PAUSED`，没有继续出声。
+
+### 24.4 在线音源前置条件仍然成立
+
+内置搜索恢复不等于内置结果可播放。`Online Metadata 0.4.8` 仍没有声明或实现 `musicUrl`，`LX Music API Source Loader 0.1.7` 仍没有导入任何 LX 脚本；这两类结果点击后不能取到播放地址。`GD音乐台 0.4.3` 同时提供搜索和 `musicUrl`，是当前已验证的可播放来源。要播放内置搜索的结果，需要安装支持 `musicUrl` 的扩展，或在 LX loader 中导入音源脚本；这是扩展能力前置条件，不是播放器或音频链路故障。状态文案会分别提示缺失音源、LX 脚本未导入、超时和明文网络拒绝。
+
+### 24.5 门禁与剩余边界
+
+- `pnpm typecheck`：移植层 strict 通过，0 错误。
+- `pnpm build:all`：通过；入口为 `main.i-PlVHwT.js`。
+- `pnpm smoke`：通过，包含歌词制作信息过滤和设置备份恢复，共 53 次原生 Ports 调用。
+- `:app:assembleDebug -PskipWeb=true -PrequireWeb=true`：通过。
+- `check-webdist.mjs --assets`：`VERDICT: OK`，`index.html`、主入口和 extension-preload 3 项指纹在 dist 与 APK assets 间全等。
+- 内置搜索结果没有可播放地址时，上游仍会先跑完两轮 30 秒取流超时：真机约 60 秒后才显示错误并自动跳到下一首。本轮保证失败可见，但没有提前短路，因为其他扩展的搜索回退仍可能在同一请求内返回有效 URL。
+
+未完成项不变：在线专辑/歌手搜索缺少扩展能力、宿主 IPC 和页面实现；下载被上游关闭；评论只读；Android 10–15、横屏、平板/折叠屏和外接指针未覆盖。第三方音源自身的 400/503、空结果和长期不可用无法由应用保证。

@@ -77,6 +77,11 @@ export default class Store {
     this.writeFile()
   }
 
+  /** 等待当前 Store 的最新内容落盘；配置等需要写穿的场景使用 */
+  flush(): Promise<void> {
+    return this.safeFS.flush()
+  }
+
   /** 序列化当前内容（调试 / 导入导出用） */
   toBuffer(): Buffer {
     return Buffer.from(JSON.stringify(this.store, null, '\t'))

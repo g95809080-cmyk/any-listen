@@ -26,6 +26,8 @@ import com.anylisten.ports.ui.ClipboardPortImpl
 import com.anylisten.ports.ui.DocumentPicker
 import com.anylisten.ports.ui.IntentPort
 import com.anylisten.ports.ui.IntentPortImpl
+import com.anylisten.ports.ui.PickedDocument
+import com.anylisten.ports.ui.SaveSource
 import com.anylisten.ports.ui.ThemePort
 import com.anylisten.ports.ui.ThemePortImpl
 import java.io.File
@@ -70,6 +72,27 @@ class PortRegistry(
     }
   }
 
+  private val documentPickerAdapter = object : DocumentPicker {
+    private fun current(): DocumentPicker = documentPicker
+      ?: throw PortException(PortErrorCode.EUNSUPPORTED, "document picker is not available (no Activity bound)")
+
+    override suspend fun openDocument(mime: List<String>): PickedDocument? = current().openDocument(mime)
+    override suspend fun saveDocument(suggestName: String, mime: String, source: SaveSource?): PickedDocument? =
+      current().saveDocument(suggestName, mime, source)
+  }
+
+  private val foregroundServiceAdapter = object : ForegroundServiceController {
+    override fun start(action: String) {
+      val controller = foregroundServiceController
+        ?: throw PortException(PortErrorCode.EUNSUPPORTED, "foreground service controller is not wired")
+      controller.start(action)
+    }
+
+    override fun stop() {
+      foregroundServiceController?.stop()
+    }
+  }
+
   /**
    * 应用数据目录布局（`<dataPath>/{app,cache,temp}`）—— 与桌面版同构，
    * 定义见 [com.anylisten.ports.fs.StorageLayout]。
@@ -93,10 +116,10 @@ class PortRegistry(
     userAgent = userAgent,
   )
 
-  val power: PowerPort by lazy { PowerPortImpl(appContext, foregroundServiceController) }
+  val power: PowerPort by lazy { PowerPortImpl(appContext, foregroundServiceAdapter) }
   val theme: ThemePort = ThemePortImpl(appContext)
   val clipboard: ClipboardPort = ClipboardPortImpl(appContext)
-  val intent: IntentPort by lazy { IntentPortImpl(appContext, documentPicker) }
+  val intent: IntentPort by lazy { IntentPortImpl(appContext, documentPickerAdapter) }
   val tar: TarPort = TarPortImpl()
 
   /** 由 :app 在 MediaSession / PlaybackService 就绪后回填 */

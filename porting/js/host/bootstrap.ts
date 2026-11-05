@@ -151,13 +151,15 @@ export function createCoreWorkerBridgeClient(send: (frameJson: string) => void):
 export function registerCoreLifecycleFlush(): void {
   void import('../ports').then(({ ports }) => {
     ports.lifecycle.onBackground(() => {
-      void flushSyncFiles()
+      void flushSyncFiles().catch((error: unknown) => console.error('[lifecycle] background flush failed', error))
     })
     ports.lifecycle.onTrimMemory(() => {
-      void flushSyncFiles()
+      void flushSyncFiles().catch((error: unknown) => console.error('[lifecycle] memory flush failed', error))
     })
-    ports.lifecycle.onBeforeTerminate(() => {
+    ports.lifecycle.onBeforeTerminate((id) => {
       void flushSyncFiles()
+        .then(() => ports.lifecycle.acknowledgeTermination(id, 'core'))
+        .catch((error: unknown) => console.error('[lifecycle] termination flush failed', error))
     })
   })
 }

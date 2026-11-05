@@ -14,6 +14,13 @@ import com.anylisten.ports.http.HttpRequestOptions
 import com.anylisten.ports.http.ProxySpec
 import com.anylisten.ports.log.LogLevel
 
+internal fun decodeHttpBody(value: Any?): ByteArray? = when (value) {
+  null -> null
+  is ByteArray -> value
+  is String -> value.toByteArray(Charsets.UTF_8)
+  else -> throw PortException(PortErrorCode.EUNSUPPORTED, "http request body must be text or bytes")
+}
+
 /** `http.*` —— 对应 `HttpPort`（§4.4）。 */
 class HttpModule(private val registry: PortRegistry) : BridgeModule {
   override val name: String = "http"
@@ -34,7 +41,7 @@ class HttpModule(private val registry: PortRegistry) : BridgeModule {
               ?.associate { (k, v) -> k.toString() to v.toString() } ?: emptyMap(),
             query = (opts["query"] as? Map<*, *>)?.entries
               ?.associate { (k, v) -> k.toString() to v.toString() } ?: emptyMap(),
-            body = opts["body"] as? ByteArray,
+            body = decodeHttpBody(opts["body"]),
             bodyFilePath = opts["bodyFilePath"] as? String,
             timeoutMs = (opts["timeoutMs"] as? Number)?.toLong() ?: 30_000,
             retryNum = (opts["retryNum"] as? Number)?.toInt() ?: 0,
@@ -284,7 +291,11 @@ class LifecycleModule(private val registry: PortRegistry) : BridgeModule {
     }
     "onBeforeTerminate" -> {
       val cb = ctx.callbackArg(0) ?: ctx.callbackAt(0)
-      registry.lifecycle.onBeforeTerminate { ctx.emit(cb) }
+      registry.lifecycle.onBeforeTerminate { id -> ctx.emit(cb, id) }
+      null
+    }
+    "acknowledgeTermination" -> {
+      registry.lifecycle.acknowledgeTermination(args.str(0), args.str(1))
       null
     }
 
