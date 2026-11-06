@@ -1,0 +1,126 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    env:
+      UPSTREAM_REPO: https://github.com/any-listen/any-listen.git
+      UPSTREAM_COMMIT: c8f40eab05021735b969e5991e6ec2f2c63e83b8
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned upstream
+        run: |
+          git init source
+          git -C source remote add origin "$UPSTREAM_REPO"
+          git -C source fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C source checkout --detach FETCH_HEAD
+          git -C source rev-parse HEAD
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            source/pnpm-lock.yaml
+            porting/js/pnpm-lock.yaml
+            porting/extensions/lx-api-source-loader/pnpm-lock.yaml
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          (yes | sdkmanager --licenses > /dev/null) || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install upstream dependencies
+        working-directory: source
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install porting dependencies
+        working-directory: porting/js
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web assets
+        working-directory: porting/js
+        run: pnpm build:all
+
+      - name: Build LX loader extension
+        working-directory: porting/extensions/lx-api-source-loader
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Configure Android SDK path
+        run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > porting/android/local.properties
+
+      - name: Build debug APK
+        working-directory: porting/android
+        run: ./gradlew :app:assembleDebug -PrequireWeb=true -PskipWeb=true --no-daemon --console=plain
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          package_dir="$RUNNER_TEMP/anylisten-package"
+          mkdir -p "$package_dir"
+
+          cp porting/android/app/build/outputs/apk/debug/app-debug.apk \
+            "$package_dir/anylisten-android-debug.apk"
+          find artifacts/lx-loader -maxdepth 1 -type f -name '*.alix' \
+            -exec cp {} "$package_dir/" \;
+
+          {
+            echo "Any Listen for Android"
+            echo "Commit: $GITHUB_SHA"
+            echo "Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "Install APK: adb install -r anylisten-android-debug.apk"
+            echo "Install LX loader: Settings -> Extensions -> Local install -> choose the .alix file"
+          } > "$package_dir/BUILD-INFO.txt"
+
+          (
+            cd "$package_dir"
+            sha256sum ./* > SHA256SUMS.txt
+            ls -lh
+            cat SHA256SUMS.txt
+          )
+
+      - name: Upload build package
+        uses: actions/upload-artifact@v4
+        with:
+          name: anylisten-android-debug
+          path: ${{ runner.temp }}/anylisten-package
+          if-no-files-found: error
+          retention-days: 30

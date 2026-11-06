@@ -13,6 +13,7 @@
   <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white">
   <img alt="Version" src="https://img.shields.io/badge/version-1.0.0--android.1-4F62D0">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0%20%2B%20Additional%20Terms-6B7280"></a>
+  <a href="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml"><img alt="Build Android APK" src="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml/badge.svg"></a>
 </p>
 
 > 非官方 Android 移植，基于 [Any Listen](https://github.com/any-listen/any-listen)。当前面向个人使用与学习。
@@ -53,7 +54,13 @@ Any Listen 原本运行在桌面和 Web 服务端。本项目把同一套曲库�
 
 需要 **Android 10（API 29）或更新版本**，目标设备为 `arm64-v8a`。
 
-项目当前以源码交付，不附带预编译安装包。自行构建后的文件位于：
+仓库不提交二进制文件。可以直接下载 GitHub Actions 的构建包，或按下方步骤自行构建。构建包内包含 APK、LX 加载器扩展和 SHA-256 校验文件：
+
+1. 打开 [Build Android APK](https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml)。
+2. 选择最近一次成功的运行。
+3. 在页面底部下载 `anylisten-android-debug`。
+
+自行构建后的文件位于：
 
 | 类型 | 路径 | 说明 |
 |---|---|---|
