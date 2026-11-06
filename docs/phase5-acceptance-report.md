@@ -1606,3 +1606,26 @@ PDR-007 原先只写了“隐藏桌面专属项”，实际设置页仍显示 13
 - `:app:assembleDebug -PskipWeb=true -PrequireWeb=true` 为 `BUILD SUCCESSFUL`；`check-webdist.mjs --assets` 为 `VERDICT: OK`，`index.html`、`main.BP7v_VMg.js`、extension-preload 三项指纹 dist↔assets 全等。
 - 真机覆盖安装成功，`lastUpdateTime` 为 2026-11-06 16:07:12；设备内 `base.apk` 为 20,368,638 B，SHA-256 `acb503e185d8c185ef3f6d2e7f2f9808cf7fb275860a990a76fd6020929959af`，与本地一致。
 - 本轮边界仍是手机竖屏；横屏、平板/折叠屏和外接指针没有新增覆盖。D-39 的队列入口沿用上游 BottomSheet，D-40 的布局只作用于移动端播放详情，D-41 只改变歌词播放器生命周期，不改歌词解析和播放链路。
+
+---
+
+## 31. 应用启动图标（D-42，2026-11-06）
+
+### 31.1 现象与根因
+
+APK 安装后使用系统默认图标。Manifest 的 `<application>` 只有 `label` 和 `theme`，没有 `android:icon` / `android:roundIcon`，`res/` 下也没有 launcher 图标资源。功能层与 WebView 无关，属于 Android 壳层资源缺失。
+
+### 31.2 修法
+
+- 图标来源固定为上游桌面版 `source/packages/desktop/resources/icons/icon.png`（512×512 RGBA），不使用重新绘制的素材。
+- 原图蓝色为 `#4F62D0`，白色波形未播放态与上游一致。adaptive icon 背景使用该纯色，前景从原图提取波形 alpha；波形宽度按 adaptive 安全区缩至 `62/108dp`，避免启动器圆形/圆角遮罩裁掉笔画。
+- 新增 `mipmap-anydpi-v26/ic_launcher.xml` 与 `ic_launcher_round.xml`，并为 Android 13+ 提供 `monochrome` 层作为主题图标。
+- 同时生成 `mdpi / hdpi / xhdpi / xxhdpi / xxxhdpi` 的 `ic_launcher.png` 与 `ic_launcher_round.png`，作为非 adaptive 路径兜底。
+- Manifest 接入 `android:icon="@mipmap/ic_launcher"` 与 `android:roundIcon="@mipmap/ic_launcher_round"`。
+
+### 31.3 构建与真机复验
+
+- `aapt2 dump badging`：`application: label='Any Listen' icon='res/mipmap-anydpi-v26/ic_launcher.xml'`；160–640dpi 均解析到该 adaptive icon。
+- Xiaomi 2211133C / Android 16 覆盖安装后，系统「应用信息」页显示蓝底白色波形图标；返回桌面后，启动器图标同样已刷新。截图见 `artifacts/launcher-icon-app-info.png`、`artifacts/launcher-icon-home-check.png`。
+- `:app:assembleDebug -PskipWeb=true -PrequireWeb=true` 为 `BUILD SUCCESSFUL`；APK 为 20,370,123 B，构建时间 2026-11-06 16:42:46 +08:00，SHA-256 `0E6738230118BA4CC97CB702E2281624CDE1C0988D28B9BA81BFAFD1F93D3100`；真机 `lastUpdateTime` 为 16:43:15。
+- 本轮只改 Android 资源与 Manifest，不改 JS、`source/` 或播放逻辑。

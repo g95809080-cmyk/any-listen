@@ -450,6 +450,10 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
 
 `PlaybackService` 声明 `foregroundServiceType="mediaPlayback"`，并注册 `MEDIA_BUTTON` intent-filter + `androidx.media.session.MediaButtonReceiver`。
 
+### 启动图标
+
+启动图标沿用上游桌面版 `source/packages/desktop/resources/icons/icon.png`，不是另画的新素材。`AndroidManifest.xml` 接入 `@mipmap/ic_launcher` 与 `@mipmap/ic_launcher_round`；`mipmap-anydpi-v26` 使用 adaptive icon，背景取原图蓝色 `#4F62D0`，前景是提取出的白色波形，并提供 `monochrome` 供 Android 13+ 主题图标使用。`mipmap-mdpi`–`mipmap-xxxhdpi` 保留原图缩放后的 PNG，供非 adaptive 路径兜底。
+
 ### 明文流量策略（`network_security_config`，已收口）
 
 **不再使用全局 `usesCleartextTraffic="true"`**，改由 `res/xml/network_security_config.xml` 控制：
