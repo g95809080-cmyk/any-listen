@@ -11,7 +11,7 @@
 
 <p align="center">
   <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.0--android.1-4F62D0">
+  <a href="https://github.com/g95809080-cmyk/any-listen/releases/latest"><img alt="Version" src="https://img.shields.io/badge/version-1.0.0--android.1-4F62D0"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0%20%2B%20Additional%20Terms-6B7280"></a>
   <a href="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml"><img alt="Build Android APK" src="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml/badge.svg"></a>
 </p>
@@ -54,7 +54,14 @@ Any Listen 原本运行在桌面和 Web 服务端。本项目把同一套曲库�
 
 需要 **Android 10（API 29）或更新版本**，目标设备为 `arm64-v8a`。
 
-仓库不提交二进制文件。可以直接下载 GitHub Actions 的构建包，或按下方步骤自行构建。构建包内包含 APK、LX 加载器扩展和 SHA-256 校验文件：
+仓库不提交二进制文件。推荐直接下载 [v1.0.0-android.1 Release](https://github.com/g95809080-cmyk/any-listen/releases/tag/v1.0.0-android.1)，附件包含：
+
+- `anylisten-android-1.0.0-android.1-debug.apk`
+- `lx-api-source-loader-android_0.1.7-android.1.alix`
+- `BUILD-INFO.txt`
+- `SHA256SUMS.txt`
+
+想获取后续构建，也可以在 GitHub Actions 下载最新产物：
 
 1. 打开 [Build Android APK](https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml)。
 2. 选择最近一次成功的运行。
