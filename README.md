@@ -30,7 +30,7 @@
 
 适配扩展使用独立 ID，与官方扩展的数据分别保存；已有官方扩展的音源可先导出，再导入适配版。扩展源码和构建方式见 `porting/extensions/lx-api-source-loader/README.md`。
 
-30 分钟息屏长测已由用户验收通过。此前的 Debug 包已在 Xiaomi 2211133C / Android 16 真机复验本地与在线播放、备份恢复和媒体会话；本轮 LX 自定义源已在 API 36 模拟器完成 24 个源批量导入、10 轮覆盖更新和代表源播放，并在 Xiaomi 2211133C / Android 16 真机完成最终 APK 与适配扩展的安装加载。`release` 包仍为此前构建并使用调试签名，不含本轮 LX 功能。详细进度见 `docs/phase5-acceptance-report.md` §16–29。
+30 分钟息屏长测已由用户验收通过。此前的 Debug 包已在 Xiaomi 2211133C / Android 16 真机复验本地与在线播放、备份恢复和媒体会话；本轮 LX 自定义源已在 API 36 模拟器完成 24 个源批量导入、10 轮覆盖更新和代表源播放，并在 Xiaomi 2211133C / Android 16 真机完成最终 APK 与适配扩展的安装加载。`release` 包仍为此前构建并使用调试签名，不含本轮 LX 功能。详细进度见 `docs/phase5-acceptance-report.md` §16–30。
 
 ## 目录结构
 
@@ -104,7 +104,7 @@ WebView 通过 `http://127.0.0.1:<随机端口>?t=<token>` 加载 SPA，与 `/st
 | A-30 | `view-main/src/modules/lyric/init` | `ui/overrides/modules/lyric/init.ts` | 过滤带时间戳的中英文制作人员行，以及开头 3 秒内形如「歌名 - 歌手」的标题行；正常唱词仍保留 |
 | A-31 | `@any-listen/app/modules/backup`（`PACKAGE_OVERRIDES`） | `host/app/modules/backup/index.ts` | 上游备份只导出歌单。移植层把设置快照一起写入并在恢复时校验、合并，恢复后重启仍保留 |
 | A-32 | `view-main/src/views/Setting/AppSetting/Backup/typeSelectModal/App.svelte` | `ui/overrides/views/Setting/AppSetting/Backup/typeSelectModal/App.svelte` | 上游把备份类型里的「设置」勾选框写死为 disabled；覆写恢复选择与回调 |
-| A-33 | `view-main/src/components/layout/PlayDetail/RightLyric/index.svelte` | `ui/overrides/components/layout/PlayDetail/RightLyric/index.svelte` | 无歌词时上游歌词区完全空白；先显示「歌词加载中…」，1.5 秒后显示「暂无歌词」，有歌词时继续使用上游 `LyricPlayer` |
+| A-33 | `view-main/src/components/layout/PlayDetail/RightLyric/index.svelte` | `ui/overrides/components/layout/PlayDetail/RightLyric/index.svelte` | 无歌词时上游歌词区完全空白；先显示「歌词加载中…」，1.5 秒后显示「暂无歌词」，有歌词时继续使用上游 `LyricPlayer`。**D-41**：`LyricPlayer` 改为始终挂载，避免切歌清空歌词时卸载组件、旧滚动回调再写入已消失的 DOM |
 | A-34 | `view-main/src/components/material/fileExplorerModal/FileListModal.svelte` | `ui/overrides/components/material/fileExplorerModal/FileListModal.svelte` | 窄屏下「文件名 + 新建文件夹 + 取消/确定」原本挤成一行并重叠；改为可换行底栏 |
 | A-35 | `shared/app/modules/worker/extensionService/vm/hostContext/apis/isolateContext` | `host/app/modules/worker/extensionService/vm/hostContext/apis/isolateContext.ts` | 修正隔离上下文的定时器归属，并在销毁或停用扩展时释放 QuickJS 资源 |
 | A-36 | `shared/app/modules/worker/extensionService/vm/hostContext/index` | `host/app/modules/worker/extensionService/vm/hostContext/index.ts` | 扩展停止后释放主 QuickJS 上下文 |
@@ -116,6 +116,7 @@ WebView 通过 `http://127.0.0.1:<随机端口>?t=<token>` 加载 SPA，与 `/st
 | A-42 | `view-main/src/views/Setting/AppSetting/SettingView.svelte` | `ui/overrides/views/Setting/AppSetting/SettingView.svelte` | **D-38**：二级设置页去掉桌面左栏和重复标题，内容改为独立纵向滚动区与单列卡片 |
 | A-43 | `view-main/src/views/Setting/AppSetting/SettingCommonItem.svelte` | `ui/overrides/views/Setting/AppSetting/SettingCommonItem.svelte` | **D-38**：布尔项改为整行可点 + 右侧开关，单选、输入与选择项改成适合触屏的纵向布局 |
 | A-44 | `view-main/src/views/Setting/ExtensionSetting/ExtensionSetting.svelte` | `ui/overrides/views/Setting/ExtensionSetting/ExtensionSetting.svelte` | **D-38**：扩展设置接新的 `section` 路由，补无扩展空态，并把扩展切换条改为可横滑触摸导航 |
+| A-45 | `view-main/src/components/layout/PlayDetail/Footer/index.svelte` | `ui/overrides/components/layout/PlayDetail/Footer/index.svelte` | **D-40**：播放详情底栏改为移动端两行——辅控五键在上，主控红心 / 上一曲 / 播放 / 下一曲 / 播放列表在下；固定 `208dp` 高度，主控保持 `51/72/51dp`，辅控命中区 `44dp`，进度条与时间文字垂直居中 |
 
 > 另有反向通道 `RAW_TARGETS`（`@any-listen/nodejs/uplink`、`@porting-uplink/web-server/app/modules/extension`、
 > `@ui-raw/shared/ipc/app`、文件浏览器列表项、搜索列表 action 和设置表），仅供覆写文件内部引用「上游原版本」，不改变任何上游文件的解析结果；
@@ -186,19 +187,19 @@ ADB=/c/Users/kuma/AppData/Local/Android/Sdk/platform-tools/adb.exe
 | `docs/phase3-uiux.md` | 触控交互规格、布局重排、断点与尺寸 |
 | `docs/phase3-uiux-impl-spec.md` | 逐组件实现规格（含 tab、MiniPlayer、空态） |
 | `docs/porting-decision-record.md` | **PDR-001~009 决策 + ERR-001~023 勘误**（每个坑的现象、量出来的证据、根因、修法、可推广教训） |
-| `docs/phase5-acceptance-report.md` | 验收报告、历史缺陷与最新实测边界（§16–29） |
+| `docs/phase5-acceptance-report.md` | 验收报告、历史缺陷与最新实测边界（§16–30） |
 | `docs/phase6-compliance.md` | 上游零改动验证、许可证清单与义务、产物泄露检查、许可证门禁签字 |
 
 ## 当前状态
 
 **交付物**：`porting/android/app/build/outputs/apk/debug/app-debug.apk`
-SHA-256：`331767D1E1C9207C230135EBD786CA4899E312A7BBB5EA75543B949D668B5CE3`；20,368,909 B；构建时间 2026-11-06 14:51:25 +08:00；入口 `assets/web/spa/assets/main.5msTpYQQ.js`、样式 `assets/web/spa/assets/style.Dh0GvC50.css`。
+SHA-256：`ACB503E185D8C185EF3F6D2E7F2F9808CF7FB275860A990A76FD6020929959AF`；20,368,638 B；构建时间 2026-11-06 16:06:46 +08:00；入口 `assets/web/spa/assets/main.BP7v_VMg.js`、样式 `assets/web/spa/assets/style.BQVVV4P_.css`。
 
-30 分钟息屏长测已由用户验收通过。此前的 Debug 包已在 Xiaomi 2211133C / Android 16 真机复验本地播放、在线播放、歌词、备份恢复、文件选择和媒体会话；LX 自定义源的批量导入、10 轮覆盖更新与代表源播放已在 API 36 模拟器验收。当前包进一步收口了移动端视觉与曲库入口：文件选择器避开 AppBar 和安全区，More 菜单只保留单层 44dp 抽屉且点遮罩可关闭，自定义源 Remove 键统一右对齐，播放详情元数据与辅控图标恢复可读性，深/浅主题状态栏图标随主题切换，在线来源条在精确 392dp 视口下完整显示 5 个内置来源。D-35 补上了曲库一级歌单列表与二级歌曲页；D-36 清理了设置页的桌面残留；D-37 把在线歌单卡从桌面横向定尺改为手机单列信息卡，拆开歌单页一级 Tab 与筛选区，并修复关闭态标签抽屉常驻底部；D-38 把设置页重构为 4 组一级入口与独立二级详情，补齐移动端触控控件、扩展横滑导航和 Android 返回栈；D-39 把 MiniPlayer 右侧按钮从播放详情改为向上展开当前播放队列，点击歌曲行即可切歌。最终 APK 已分别覆盖安装到 API 36 模拟器和 Xiaomi 2211133C / Android 16 真机，设备内 `base.apk` 与本地 SHA-256 一致；真机在 392×872 视口完成复验。详情见 `docs/phase5-acceptance-report.md` §16–29。
+30 分钟息屏长测已由用户验收通过。此前的 Debug 包已在 Xiaomi 2211133C / Android 16 真机复验本地播放、在线播放、歌词、备份恢复、文件选择和媒体会话；LX 自定义源的批量导入、10 轮覆盖更新与代表源播放已在 API 36 模拟器验收。当前包进一步收口了移动端视觉与曲库入口：文件选择器避开 AppBar 和安全区，More 菜单只保留单层 44dp 抽屉且点遮罩可关闭，自定义源 Remove 键统一右对齐，播放详情元数据与辅控图标恢复可读性，深/浅主题状态栏图标随主题切换，在线来源条在精确 392dp 视口下完整显示 5 个内置来源。D-35 补上了曲库一级歌单列表与二级歌曲页；D-36 清理了设置页的桌面残留；D-37 把在线歌单卡从桌面横向定尺改为手机单列信息卡，拆开歌单页一级 Tab 与筛选区，并修复关闭态标签抽屉常驻底部；D-38 把设置页重构为 4 组一级入口与独立二级详情，补齐移动端触控控件、扩展横滑导航和 Android 返回栈；D-39 把 MiniPlayer 右侧按钮从播放详情改为向上展开当前播放队列，点击歌曲行即可切歌；D-40 把播放详情底栏重组为固定 208dp 的两行控制区，主控尺寸不变，红心与播放列表分置两端；D-41 让歌词播放器在切歌清空歌词时保持挂载，消除了旧滚动回调写入空 DOM 的异常。最终 APK 已覆盖安装到 Xiaomi 2211133C / Android 16 真机，设备内 `base.apk` 与本地 SHA-256 一致；真机在 392×872 视口完成复验。详情见 `docs/phase5-acceptance-report.md` §16–30。
 
 仍待处理：在线专辑/歌手搜索缺少扩展能力、宿主 IPC 和页面实现；下载功能被上游关闭；评论只能只读；LX 扩展的歌曲缓存开关尚未接通 Android 代理；部分触控行高不足 44dp；Android 10–15、横屏、平板/折叠屏和外接指针尚未覆盖。当前文件选择依赖文件路径与所有文件访问权限；第三方音源持续 400/503 或无法匹配播放地址时无法由应用侧保证恢复，后者仍可能等待上游两轮超时后才显示失败。明文网络按 `Online Metadata 0.4.8` 与本轮 LX 音源的 45 个精确主机放行，`example.com` 等未列入的主机仍被拒绝；音源或扩展升级后需要重新核对白名单。
 
-**历史修复记录**（对应当时的包与设备；最新包的验收范围以上文和报告 §16–29 为准）
+**历史修复记录**（对应当时的包与设备；最新包的验收范围以上文和报告 §16–30 为准）
 
 | 编号 | 原现象 | 根因 | 修法与实测 |
 |---|---|---|---|
@@ -215,6 +216,8 @@ SHA-256：`331767D1E1C9207C230135EBD786CA4899E312A7BBB5EA75543B949D668B5CE3`；2
 | D-37 | 在线「歌单」列表在手机上仍是桌面横向卡，两列时右侧文字被裁；歌单页资源 Tab 与「打开歌单 / 标签 / 排序」压在同一行；标签弹层关闭后仍被全局 BottomSheet 规则钉在底部 | 上游歌单卡按 `min-width:300px` + 定高排版，移动端全局网格又强制两列；头部过滤区没有独立换行；关闭态 `.popup` 只有 `aria-hidden` 信号，却被 `html.mobile .popup` 强制 `display:flex` | 在 `ui/mobile.less` 只对包含 `.songlist-info` 的歌单卡改单列、96dp 封面和自适应文字，排行榜保持两列；带 `.online-songlist-header-right` 的头部拆成资源类型与筛选两行；标签弹层按 `aria-hidden` 显式隐藏/展开，并补遮罩和标签纵向换行。真机 392dp 下歌单卡宽 360.7dp，排行榜仍为 174.4dp 两列，关闭态弹层为 0×0；冷启动、分页、收藏和播放入口均正常。`smoke` 新增 6 项“选择器 + 关键声明”守卫 |
 | D-38 | 设置页仍是桌面双栏和密集表单，手机上找不到清晰的一级入口；从二级页按 Android 返回还会直接退出 | 上游 `Setting/index.svelte` 依赖桌面左侧导航，设置项也按鼠标点击密度排版。移动壳虽然隐藏了左栏，但没有一级/二级路由，顶栏和返回栈都无法判断当前位置 | 设置改为 4 组 13 个一级入口，`?section=…` 进入二级页并保留旧 `type/id` 地址兼容；布尔项改整行开关，单选、输入、选择项改纵向布局。真机实测：二级页返回首页、深链直达二级页再返回首页均成立，首页 `canGoBack=false` 且连续按两次返回退到桌面；切换「显示切换动画」后刷新仍保留，扩展切换条可横滑，日志头部两行排列且按钮不相压；设置首页滚到底最后一行仍留 16.9dp 空白，MiniPlayer 不遮挡 |
 | D-39 | MiniPlayer 右侧「播放列表」键实际打开播放详情，无法直接查看或切换当前队列 | `MiniPlayer.svelte` 第三个按钮复用了详情页跳转，没有接上游已有的 `PlaylistBtn`；上游队列组件本身已适配移动端 BottomSheet | 将第三键替换为 `div.mini-btn.mini-queue` 内嵌 `PlaylistBtn`，保持 44×44dp 命中区和 24dp 图标。真机 392×872 实测：触摸队列键后从 `y=360.7` 向上展开 `392.7×512` 的底部抽屉，队列可滚动；触摸「Bounce」后 MiniPlayer 由「红色石头 - 李智楠」切为「Bounce - Sarah Connor」，队列保持打开且无页面异常；Android 返回键关闭队列后路由仍为 `#/library`，当前曲不变 |
+| D-40 | 播放详情底栏仍按桌面三组横排组织，手机上主控、辅控互相挤压；红心和播放列表被埋在侧组，进度时间与轨道也没有垂直对齐 | 上游 Footer 默认按桌面宽度排布三组控件，移动样式此前只能拆成三行；仅靠 CSS 无法把红心、播放列表从侧组移到主控两端，也无法保证主控键原尺寸 | 新增 Footer 覆写：进度条在上，辅控五键一行，主控为红心 / 上一曲 / 播放 / 下一曲 / 播放列表；控制区固定 `208dp`，主控保持 `51/72/51dp`，两侧键 `44dp`，辅控 `44dp` 命中区。392×872 真机实测无横向溢出，辅控第 2/3/4 键与上一曲/播放/下一曲同轴，时间文字和 6dp 轨道中心均为 `y=690.73` |
+| D-41 | 切歌时日志出现 `Uncaught TypeError: Cannot set properties of null (setting 'textContent')` | `RightLyric` 在歌词数组短暂清空时卸载 `LyricPlayer`，旧滚动动画或歌词事件随后仍调用 `setLyric`，此时 `domLyricText` 已不存在 | 让 `LyricPlayer` 在详情页内始终挂载，加载中/暂无歌词改为同层覆盖提示，不再随歌词数量卸载播放器。连续切 3 首真机复验：歌词分别刷新 30 / 22 / 15 行，CDP `Runtime.exceptionThrown=0`，logcat 无 `Uncaught`、`FATAL` 或 `ANR` |
 
 **已验证平台**：412×915 竖屏模拟器（x86_64 / API 36 / WebView Chromium 133）+ **arm64 真机 Xiaomi 2211133C / Android 16（392×872 CSS / dpr 2.75）**。真机复验结论见验收报告 §11：冷启动 490ms、六条判据齐全、D-10/D-11/D-22/D-23 全部成立、0 崩溃 0 ANR；因包内**无任何 `.so`（ABI 无关）**，「arm64 缺库」风险不成立。
 

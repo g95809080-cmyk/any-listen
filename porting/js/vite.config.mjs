@@ -130,6 +130,10 @@ const OVERRIDES = {
   // “Failed to obtain lyrics”；音源重试耗尽时显示可行动的中文提示。
   'view-main/src/components/layout/PlayDetail/Footer/PlayStatusText.svelte':
     'ui/overrides/components/layout/PlayDetail/Footer/PlayStatusText.svelte',
+  // 播放详情底栏改成移动端两行：辅控五键在上，主控（红心 / 上一曲 / 播放 / 下一曲 /
+  // 播放列表）在下。桌面原结构是三组横排，无法在 393px 视口内保持主控尺寸和 44dp 命中区。
+  'view-main/src/components/layout/PlayDetail/Footer/index.svelte':
+    'ui/overrides/components/layout/PlayDetail/Footer/index.svelte',
   'view-main/src/components/layout/PlayBar/components/PlayInfo.svelte':
     'ui/overrides/components/layout/PlayBar/components/PlayInfo.svelte',
   // A-32：上游把“设置”勾选框写死为 disabled，覆写只恢复选择与回调。

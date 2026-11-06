@@ -29,9 +29,8 @@
 <div class="right-lyric">
   {#if introend}
     <div in:fade={{ delay: 5 }} class="right-lyric-content">
-      {#if $lyricLines.length}
-        <LyricPlayer />
-      {:else}
+      <LyricPlayer />
+      {#if !$lyricLines.length}
         <div class="lyric-empty" aria-live="polite">
           {tm(showEmpty ? 'mobile__lyric_empty' : 'mobile__lyric_loading')}
         </div>

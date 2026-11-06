@@ -213,6 +213,7 @@ UI 改造同样**不碰 `source/`**：`resolveId` 里有一张「上游绝对路
 | `view-main/src/views/Setting/AppSetting/SettingView.svelte` | `ui/overrides/views/Setting/AppSetting/SettingView.svelte` | 二级页去掉桌面左栏与重复标题，内容改为独立滚动区和单列卡片 | D-38 |
 | `view-main/src/views/Setting/AppSetting/SettingCommonItem.svelte` | `ui/overrides/views/Setting/AppSetting/SettingCommonItem.svelte` | 布尔项整行触控，单选与输入项改为手机纵向布局 | D-38 |
 | `view-main/src/views/Setting/ExtensionSetting/ExtensionSetting.svelte` | `ui/overrides/views/Setting/ExtensionSetting/ExtensionSetting.svelte` | 扩展设置接新路由、补空态，切换条改为可横滑导航 | D-38 |
+| `view-main/src/components/layout/PlayDetail/Footer/index.svelte` | `ui/overrides/components/layout/PlayDetail/Footer/index.svelte` | 播放详情底栏改为手机两行：辅控五键在上，红心 / 上一曲 / 播放 / 下一曲 / 播放列表在下 | D-40 |
 
 **以下规格里标了 O-2…O-5 / O-1b，本批次有意不覆盖**，理由逐条如下（不是遗漏）：
 

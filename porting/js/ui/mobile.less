@@ -649,20 +649,6 @@ html.mobile .right-lyric {
   flex: auto !important;
   min-height: 0;
 }
-html.mobile .play-detail .footer {
-  height: auto !important;
-  padding-bottom: calc(12px + var(--safe-bottom));
-}
-html.mobile .play-detail .footer-content {
-  padding: 0 16px !important;
-}
-/* footer 顶部控制行：3 组横排 → 分两行（主控居中在上、两侧辅控在下） */
-html.mobile .play-detail .footer .control {
-  flex-wrap: wrap;
-}
-html.mobile .play-detail .footer .side {
-  flex: 1 1 40%;
-}
 /* 播放详情顶栏控制键（关闭/全屏）→ 44dp，隐藏全屏键 */
 html.mobile .play-detail .control-btn button {
   width: var(--touch-min) !important;
@@ -1672,17 +1658,20 @@ html.mobile .play-detail .lyric .line-content.line-mode.active .font-lrc {
   font-weight: 600;
 }
 
-/* 控制区：去掉 size containment → 高度由内容决定；底部吃 --inset-bottom */
+/* 控制区：固定 208dp；底部安全区单独叠加，避免不同设备上控制区高度跳动。 */
 html.mobile .play-detail .footer {
   contain: layout paint !important;
   flex: none !important;
-  height: auto !important;
+  height: calc(208px + var(--safe-bottom, 0px)) !important;
+  min-height: calc(208px + var(--safe-bottom, 0px)) !important;
+  max-height: calc(208px + var(--safe-bottom, 0px)) !important;
   padding-bottom: calc(8px + var(--safe-bottom, 0px)) !important;
 }
 html.mobile .play-detail .footer-content {
   display: flex !important;
   flex-flow: column nowrap !important;
-  height: auto !important;
+  height: 200px !important;
+  min-height: 200px !important;
   /* 状态文字是绝对定位贴底显示；留出它自己的 16px 高度，避免暂停/报错时
      压在最后一行辅助控制键上。 */
   padding: 16px 8px 20px !important;
@@ -1695,88 +1684,199 @@ html.mobile .play-detail .middle-play-progress {
   order: 1;
   flex: none !important;
   width: 100% !important;
+  height: 20px !important;
+  min-height: 20px !important;
   margin: 0 0 16px !important;
   font-size: 12px !important;
 }
-html.mobile .play-detail .middle-play-progress .progress {
-  padding: 10px 0 !important;    /* 与 §6 的 44dp 命中带配合 */
+/* 只给进度条外框补布局尺寸。内层 .progress 是真正画 6dp 轨道的元素；
+   若把 padding 同时套到两层，会把轨道整体向下推 10dp，时间文字就会错位。 */
+html.mobile .play-detail .middle-play-progress > .progress {
+  display: flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+  flex: auto !important;
+  height: 20px !important;
+  padding: 0 !important;
   margin: 0 8px !important;
 }
-/* 控制行：桌面「左辅控 | 主控 | 右辅控」横排 → 竖排三行（主控在上）。
-   412dp 一行装不下：主控 3 键 72+44+44+gap ≈ 200，两侧辅控各 4 键 × 44 + 3×8 = 200，
-   合计 ≈ 600dp；而 touch 硬底线要求相邻命中区 ≥8dp，不能靠挤在一起解决。
-   所以拆三行：主控 / 左辅控 / 右辅控，每组内 4×44 + 3×8 = 200dp，居中。
-   行间距取 `--gap-min`（8dp）—— 2dp 会让上下两行按钮的命中区几乎贴在一起（实测会被判「间距不达标」）。 */
-html.mobile .play-detail .footer .control {
-  order: 2;
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
-  gap: var(--gap-min) !important;
-}
-/* 主控（上/播放暂停/下）：72dp 主键 + 44dp 副键 */
-html.mobile .play-detail .footer .control > .container {
-  order: 1;
-  justify-content: center;
-  width: 100%;
-  height: var(--touch-play) !important;
-  padding: 0 !important;
-  gap: var(--gap-min) !important;
-}
-html.mobile .play-detail .footer .control > .container .btn {
-  align-items: center;
-  justify-content: center;
-  min-width: var(--touch-min);
-  min-height: var(--touch-min);
-}
-html.mobile .play-detail .footer .control > .container .btn:nth-child(2) {
-  min-width: var(--touch-play);
-  min-height: var(--touch-play);
-}
-/* 两侧辅控：各占一行，居中 */
-html.mobile .play-detail .footer .control > .side {
-  order: 2;
+html.mobile .play-detail .middle-play-progress > .progress > .progress {
   flex: none !important;
-  justify-content: center;
-  width: 100%;
-  height: auto !important;
+  width: 100% !important;
+  height: 6px !important;
+  min-height: 6px !important;
   padding: 0 !important;
   margin: 0 !important;
 }
-html.mobile .play-detail .footer .control > .side.right {
-  order: 3;
-  padding-left: 0 !important;
+html.mobile .play-detail .middle-play-progress > span {
+  flex: none !important;
+  line-height: 14.4px !important;
 }
-html.mobile .play-detail .footer .control > .side > .container {
-  justify-content: center;
-  width: 100%;
-  gap: var(--gap-min) !important;
+/* 控制区两行：辅控在上、主控在下；总高 124dp = 44 + 8 + 72。 */
+html.mobile .play-detail .footer .control {
+  order: 2;
+  display: flex !important;
+  flex: none !important;
+  flex-flow: column nowrap !important;
+  gap: 8px !important;
+  width: 100% !important;
+  height: 124px !important;
 }
-/* 辅控命中区 44×44（这些按钮上游是 `<button class="container">`/`.btn`，尺寸各自写死） */
-html.mobile .play-detail .footer .control > .side > .container > * {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--touch-min) !important;
-  min-height: var(--touch-min) !important;
-  height: var(--touch-min) !important;
+/* 辅控五键：44dp 命中区，中心距 69.5dp，第 2/3/4 键分别与上一曲/播放/下一曲对齐。 */
+html.mobile .play-detail .control-row-aux {
+  display: flex !important;
+  flex: none !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 44px !important;
+  column-gap: 25.5px !important;
+}
+html.mobile .play-detail .aux-action {
+  display: flex !important;
+  flex: none !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 44px !important;
+  height: 44px !important;
+  color: var(--color-primary) !important;
+  opacity: 0.72 !important;
+}
+html.mobile .play-detail .aux-action > button,
+html.mobile .play-detail .aux-action > .icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  min-height: 44px !important;
   padding: 0 !important;
-  color: var(--color-button-font);
-  background: transparent;
-  border: 0;
-}
-/* 辅控图标上游用 svg opacity: .5、评论键再叠 button opacity: .5，
-   在浅色详情页上几乎看不见。命中区已经 44dp，图标本身也需保持可辨识；
-   颜色继续跟随主题，避免深色主题出现深蓝图标压在深色背景上。 */
-html.mobile .play-detail .footer .control > .side button {
-  color: var(--color-button-font) !important;
+  margin: 0 !important;
+  color: inherit !important;
+  background: transparent !important;
+  border: 0 !important;
   opacity: 1 !important;
 }
-html.mobile .play-detail .footer .control > .side svg {
-  opacity: 0.8 !important;
-}
-html.mobile .play-detail .footer .control > .side :is(button, .container):active svg {
+html.mobile .play-detail .aux-action > .icon button,
+html.mobile .play-detail .aux-action > button > .icon,
+html.mobile .play-detail .aux-action > button > .btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  color: inherit !important;
   opacity: 1 !important;
+}
+html.mobile .play-detail .aux-action > button > .icon,
+html.mobile .play-detail .aux-action > button > .btn {
+  width: 24px !important;
+  height: 24px !important;
+}
+html.mobile .play-detail .aux-action svg {
+  width: 24px !important;
+  height: 24px !important;
+  opacity: 1 !important;
+}
+/* 主控行：两侧 44dp 副键钉在边缘，中间保留原 51 / 72 / 51dp。 */
+html.mobile .play-detail .control-row-main {
+  display: grid !important;
+  flex: none !important;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center !important;
+  width: 100% !important;
+  height: 72px !important;
+  padding: 0 8px !important;
+}
+html.mobile .play-detail .side-action {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 44px !important;
+  height: 44px !important;
+}
+html.mobile .play-detail .side-action-heart {
+  grid-column: 1;
+  color: var(--color-font-label) !important;
+  opacity: 0.72 !important;
+}
+html.mobile .play-detail .side-action-playlist {
+  grid-column: 3;
+  color: var(--color-primary) !important;
+  opacity: 0.72 !important;
+}
+html.mobile .play-detail .side-action > .icon,
+html.mobile .play-detail .side-action > button {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 44px !important;
+  height: 44px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  color: inherit !important;
+  background: transparent !important;
+  border: 0 !important;
+  opacity: 1 !important;
+}
+html.mobile .play-detail .side-action > .icon .music-heart-btn,
+html.mobile .play-detail .side-action > .icon button,
+html.mobile .play-detail .side-action > button > .icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 44px !important;
+  height: 44px !important;
+  padding: 0 !important;
+  color: inherit !important;
+  background: transparent !important;
+  border: 0 !important;
+  opacity: 1 !important;
+}
+html.mobile .play-detail .side-action svg {
+  width: 30px !important;
+  height: 30px !important;
+  opacity: 1 !important;
+}
+html.mobile .play-detail .control-row-main > .container {
+  display: flex !important;
+  flex: none !important;
+  grid-column: 2;
+  align-items: center !important;
+  justify-content: center !important;
+  justify-self: center;
+  height: 72px !important;
+  padding: 0 !important;
+  gap: 8px !important;
+}
+html.mobile .play-detail .control-row-main > .container > .btn {
+  display: flex !important;
+  flex: none !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 51px !important;
+  min-width: 51px !important;
+  height: 51px !important;
+  min-height: 51px !important;
+  padding: 0 !important;
+}
+html.mobile .play-detail .control-row-main > .container > .btn:nth-of-type(2) {
+  width: 72px !important;
+  min-width: 72px !important;
+  height: 72px !important;
+  min-height: 72px !important;
+}
+html.mobile .play-detail .control-row-main > .container > .btn:nth-of-type(1) svg,
+html.mobile .play-detail .control-row-main > .container > .btn:nth-of-type(3) svg {
+  width: 51px !important;
+  height: 51px !important;
+}
+html.mobile .play-detail .control-row-main > .container > .btn:nth-of-type(2) svg {
+  width: 61px !important;
+  height: 61px !important;
 }
 /* 播放状态文字（"Playing..." / 错误提示）：贴底、不吃命中区 */
 html.mobile .play-detail .play-status {

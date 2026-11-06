@@ -1569,3 +1569,40 @@ PDR-007 原先只写了“隐藏桌面专属项”，实际设置页仍显示 13
 - 最终 APK 为 20,353,255 B，构建时间 2026-11-06 13:46:03 +08:00，SHA-256 `2DB8A36B45A20C1BEBA142421EA482C930B1F6325B8A039AE43C5BFAFA346220`；入口 `main.y5rIzLsK.js`，样式 `style.DXj1ZTi0.css`。真机 `lastUpdateTime` 为 13:50:58，模拟器为 05:46:02（模拟器时区）；两端设备内 `base.apk` 均为同一 SHA-256。
 - CDP 未捕获页面异常；真机与模拟器 logcat 均未出现 `FATAL EXCEPTION`、`ANR in com.anylisten.android`、`Uncaught TypeError` 或 `JS_FreeRuntime`。第三方 `Online Metadata` 仍会打出 `finishFlush` 日志，部分源站封面使用 HTTP 或返回 404 时仍显示占位图；它们不阻断歌单文本、分页、收藏与详情，本轮未改扩展和网络白名单。
 - 本轮边界仍是手机竖屏；横屏、平板/折叠屏和外接指针没有新增覆盖。没有新增 Svelte 覆写，桌面数据链路和 `source/` 均保持不变。
+
+---
+
+## 30. 播放队列入口与详情底栏收口（D-39 / D-40 / D-41，2026-11-06）
+
+本轮只修改 `porting/` 和项目文档，`source/` 保持零改动。最终 Debug APK 为 `porting/android/app/build/outputs/apk/debug/app-debug.apk`，20,368,638 B，构建时间 2026-11-06 16:06:46 +08:00，SHA-256 `ACB503E185D8C185EF3F6D2E7F2F9808CF7FB275860A990A76FD6020929959AF`，入口 `main.BP7v_VMg.js`、样式 `style.BQVVV4P_.css`。
+
+### 30.1 现象、根因与修法
+
+- **D-39 队列入口**：MiniPlayer 右侧第三个按钮实际执行的是打开播放详情，用户无法直接查看当前队列或切歌。该键复用了详情页跳转，没有接上游已有的 `PlaylistBtn`；队列组件本身已适配移动端 BottomSheet。将第三键改为内嵌 `PlaylistBtn` 后，点击从底部向上展开队列，点歌曲行直接切歌；Android 返回键只关闭队列，不退出详情或曲库。
+- **D-40 详情底栏**：上游 Footer 按桌面宽度把控件分成三组横排。移动样式此前只能把三组拆成三行，红心和播放列表仍在侧组，主控与辅控难以同时保持原尺寸和可读间距。仅靠 CSS 无法跨组移动 DOM，因此新增 `ui/overrides/components/layout/PlayDetail/Footer/index.svelte`：进度条在上，辅控五键一行，主控为红心 / 上一曲 / 播放 / 下一曲 / 播放列表；不走运行时搬 DOM，避免 Svelte 重渲染后按钮丢失。
+- **D-40 布局约束**：控制区固定 `208dp`，内容区 `200dp`；两行总高 `124dp = 44 + 8 + 72`。主控保留 `51 / 72 / 51dp`，红心和播放列表使用 `44dp` 命中区、`30dp` 图标；辅控均使用 `44dp` 命中区和 `24dp` 图标。进度条轨道高 `6dp`，时间文字按轨道中心对齐。
+- **D-41 歌词空引用**：切歌时歌词数组会短暂清空，`RightLyric` 随即卸载 `LyricPlayer`；旧的滚动动画或歌词事件仍可能执行 `setLyric`，向已经消失的 `domLyricText` 写入 `textContent`，日志出现两次同类 `Uncaught TypeError`。修法是让 `LyricPlayer` 在详情页内始终挂载，把「歌词加载中 / 暂无歌词」改成同层覆盖提示，不再随歌词数量卸载播放器。
+
+### 30.2 真机几何与触控
+
+复验设备为 Xiaomi 2211133C / Android 16，无线调试 `192.168.1.39:37981`，视口 `392×872 CSS`，dpr `2.75`。
+
+- Footer 实测 `x=0 / y=664.73 / width=392.73 / height=208`，页面无横向溢出。
+- 辅控五个 `44×44dp` 命中区的中心 x 为 `57.36 / 126.86 / 196.36 / 265.86 / 335.36`。
+- 主控红心、上一曲、播放、下一曲、播放列表的中心 x 为 `38 / 126.86 / 196.36 / 265.86 / 354.73`，尺寸分别为 `44 / 51 / 72 / 51 / 44dp`。辅控第 2、3、4 键与上一曲、播放、下一曲完全同轴。
+- 进度外框 `y=680.73 / height=20`，轨道 `y=687.73 / height=6`；左右时间文字中心与轨道中心均为 `y=690.73`。
+- 所有控制键命中区均不小于 `44dp`；队列抽屉实测从 `y=360.73` 向上展开为 `392.73×512`。
+
+### 30.3 交互复验
+
+- 点击 MiniPlayer 队列键打开当前队列，标题、封面、音质和时长正常；点歌曲行可切歌。Android 返回键关闭抽屉后，详情仍在、当前曲不变。
+- 播放/暂停键的 `aria-label` 在「播放」与「暂停」之间正确切换；下一曲可切歌；播放顺序弹层从底部打开，返回键可关闭；进度条点击跳转正常。
+- 连续切歌 3 首后，歌词分别渲染 30 / 22 / 15 行，详情页与歌词区保持可见；CDP `Runtime.exceptionThrown=0`，logcat 未再出现先前的 `Cannot set properties of null (setting 'textContent')`。
+- 证据截图：`artifacts/playdetail-final-verified.png`（最终包）、`artifacts/playdetail-formal-queue.png`（队列）、`artifacts/playdetail-formal-mode.png`（播放顺序）、`artifacts/playdetail-formal-next.png`（切歌）。
+
+### 30.4 门禁、交付物与边界
+
+- `pnpm typecheck`：移植层 strict 0 错误；`pnpm build:all` 通过；`pnpm smoke` 通过，产物、worker、Ports、SQLite 和扩展沙箱检查全绿。
+- `:app:assembleDebug -PskipWeb=true -PrequireWeb=true` 为 `BUILD SUCCESSFUL`；`check-webdist.mjs --assets` 为 `VERDICT: OK`，`index.html`、`main.BP7v_VMg.js`、extension-preload 三项指纹 dist↔assets 全等。
+- 真机覆盖安装成功，`lastUpdateTime` 为 2026-11-06 16:07:12；设备内 `base.apk` 为 20,368,638 B，SHA-256 `acb503e185d8c185ef3f6d2e7f2f9808cf7fb275860a990a76fd6020929959af`，与本地一致。
+- 本轮边界仍是手机竖屏；横屏、平板/折叠屏和外接指针没有新增覆盖。D-39 的队列入口沿用上游 BottomSheet，D-40 的布局只作用于移动端播放详情，D-41 只改变歌词播放器生命周期，不改歌词解析和播放链路。
