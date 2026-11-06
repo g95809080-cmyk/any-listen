@@ -89,7 +89,9 @@ jobs:
 
       - name: Build debug APK
         working-directory: porting/android
-        run: ./gradlew :app:assembleDebug -PrequireWeb=true -PskipWeb=true --no-daemon --console=plain
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug -PrequireWeb=true -PskipWeb=true --no-daemon --console=plain
 
       - name: Package artifacts
         shell: bash
