@@ -859,7 +859,7 @@ export const musicClick = async (...) => {
 | 曲库列表 | `porting/js/ui/overrides/components/common/MusicList/List/index.svelte` | 单击分支由 `musicClick(...)` 改为 `playMusic(...)`；`select.setSelectIndex(index)` 保留；多选分支原样不动 |
 | 播放列表（队列） | `porting/js/ui/overrides/components/common/PlaylistBtn/shared.ts`（**新增** O-8） | `musicClick = (index) => playIndex(index)`，去掉 400ms 窗口；`removeMusic`/`playIndex`/`TabType` 原样保留 |
 
-两处都在 `porting/` 覆写层，`source/` 零改动（覆写表见 README A-13 / A-18）。
+两处都在 `porting/` 覆写层，`source/` 零改动（覆写机制见 `porting/js/README.md` §3.5）。
 
 ### 13.3 修复后实测（真机，同一台 Xiaomi 2211133C / Android 16）
 

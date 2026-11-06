@@ -795,7 +795,7 @@ fullstack-dev 改了 6 行 —— 引入 `PRELOAD_CANDIDATES`，默认模式同�
 
 | # | 条件 | 触发时点 | 验收方式 |
 |---|------|----------|----------|
-| C-1 | 整体以 **AGPL v3** 开源：移植层全部源码 + 构建脚本 + 上游对应源码（可用 commit `c8f40eab` 引用 + 说明获取方式） | 任何形式分发前 | 提供可 `git clone` 的仓库 + 构建文档；能按 README 从零重建出等价 APK |
+| C-1 | 整体以 **AGPL v3** 开源：移植层全部源码 + 构建脚本 + 上游对应源码（可用 commit `c8f40eab` 引用 + 说明获取方式） | 任何形式分发前 | 提供可 `git clone` 的仓库 + 构建文档；能按 `docs/BUILD-from-source.md` 从零重建出等价 APK |
 | C-2 | **移除 / 不适用"禁止商用"附加条款的冲突**：分发产物不得声明"禁止商用"以外的额外限制，也不得对下游追加限制（AGPL §10）。许可证文本自相矛盾（AGPL v3 本身允许商用）→ **必须由用户/法务决定呈现方式，不由工程侧自行裁定** | 任何形式分发前 | 用户书面决策记录入 PDR |
 | C-3 | 随包附 **第三方许可证 NOTICE**：列全 §2.2 表内所有进入 APK 的组件（含 Apache-2.0 的 8 个 Android 依赖 + 全部 JS bundle 组件），并**显式写明 node-forge → BSD-3-Clause、dompurify → Apache-2.0 的许可选举** | 任何形式分发前 | APK 内或随包可检索到 NOTICE 文件；`packaging.resources.excludes` 中的 `/META-INF/{AL2.0,LGPL2.1}`、`/META-INF/DEPENDENCIES` 必须移除或改为保留 |
 | C-4 | 商用需**取得原作者（lyswhut）书面授权** | 任何商业用途前 | 书面授权文件留档。**不得**援引 AGPL §7 第 3 段"可移除进一步限制"来自行豁免 |

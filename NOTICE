@@ -61,7 +61,8 @@ Apache-2.0 许可证保留在该目录的 LICENSE，来源及修改说明见该�
       `RAW_TARGETS` / `NODE_SHIMS`）把上游模块解析到 `porting/js/` 下的等价实现，
       或强制指回上游原文件。典型替换：`node:http` → HttpPort、
       `chokidar` → FileSystemPort.watch、`better-sqlite3` → sql.js(WASM)、
-      `node:vm` → QuickJS(WASM)。覆写清单与逐条理由见 README。
+      `node:vm` → QuickJS(WASM)。覆写机制与模块替换说明见
+      `porting/js/README.md` §3 和 `docs/phase2-architecture.md`。
   (b) **新增文件**：四个 Gradle 模块（`app` / `bridge` / `core-ports` / `webassets`，
       共 32 个 `.kt`）、JS 侧 Node 内置模块垫片（`porting/js/shims/`）、
       Android 运行时装配（`porting/js/ui/boot/`：返回键、安全区、弹层关闭）。
