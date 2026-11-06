@@ -24,7 +24,7 @@ android {
     // 资源裁剪：只保留中文与英文，其余语言不打进包
     resourceConfigurations += listOf("zh", "en")
 
-    // 明文流量策略：默认严格，只放行回环地址和 Online Metadata 0.4.8 的 34 个精确主机
+    // 明文流量策略：默认严格，只放行回环地址、Online Metadata 和用户 LX 源的精确主机
     // （逐条列在 res/xml/network_security_config.xml，无通配、无 includeSubdomains）。
     // `-PallowCleartext=true` 切到宽松配置，仅用于「用户在线音源是 http」的临时排查/自用场景。
     // 用 manifestPlaceholders 而不是覆盖同名资源：两个 XML 同时存在于 res/xml，由 manifest 选一个。

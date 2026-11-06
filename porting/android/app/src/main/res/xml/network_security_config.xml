@@ -9,7 +9,8 @@
 
   另外逐域名放行内置「Online Metadata 0.4.8」仍硬编码为 http 的音乐接口与封面 CDN，共 34 个主机。
   这些是扩展实际使用的完整主机名，**没有通配符、没有 includeSubdomains**；扩展升级后
-  必须重新核对清单。除此之外的域名一律禁止明文：在线音源、插件源、封面都必须走 https。
+  必须重新核对清单。下方另列用户提供的 LX 自定义源使用的精确 HTTP 主机；
+  除明确列出的主机外一律禁止明文。
   如果用户确实需要 http 音源（自建服务、老 WebDAV），两条路：
   1. 在下面加一条 `<domain-config cleartextTrafficPermitted="true">` 把**具体域名**放进去
      （不要 includeSubdomains，也不要写通配）；
@@ -29,6 +30,21 @@
   <domain-config cleartextTrafficPermitted="true">
     <domain includeSubdomains="false">127.0.0.1</domain>
     <domain includeSubdomains="false">localhost</domain>
+  </domain-config>
+
+  <!-- 用户提供的 LX 源：静态脚本与模拟器运行时检查发现的 HTTP 主机，见验收报告。 -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">8.137.89.103</domain>
+    <domain includeSubdomains="false">103.79.184.97</domain>
+    <domain includeSubdomains="false">106.55.0.102</domain>
+    <domain includeSubdomains="false">175.27.166.236</domain>
+    <domain includeSubdomains="false">anymatch.kuwo.cn</domain>
+    <domain includeSubdomains="false">api.vsaa.cn</domain>
+    <domain includeSubdomains="false">gc.kxwa.top</domain>
+    <domain includeSubdomains="false">m.kuwo.cn</domain>
+    <domain includeSubdomains="false">mobi.kuwo.cn</domain>
+    <domain includeSubdomains="false">music.nxinxz.com</domain>
+    <domain includeSubdomains="false">nmobi.kuwo.cn</domain>
   </domain-config>
 
   <!-- Online Metadata 0.4.8：搜索、歌词、封面、歌单、评论仍使用这些 http 端点。 -->

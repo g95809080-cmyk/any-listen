@@ -21,10 +21,14 @@ interface ThemePort {
   /** uiMode 变化由 :app 转发进来（Activity.onConfigurationChanged） */
   fun notifySystemThemeChanged(isDark: Boolean)
   fun onSystemThemeChanged(listener: (Boolean) -> Unit)
+  /** 由 Activity 回填；darkIcons=true 表示状态栏使用深色图标 */
+  fun bindSystemBarAppearance(listener: ((Boolean) -> Unit)?)
+  fun setSystemBarAppearance(darkIcons: Boolean)
 }
 
 class ThemePortImpl(private val context: Context) : ThemePort {
   private val listeners = java.util.concurrent.CopyOnWriteArrayList<(Boolean) -> Unit>()
+  @Volatile private var systemBarAppearanceListener: ((Boolean) -> Unit)? = null
 
   override suspend fun getSystemIsDark(): Boolean = withContext(Dispatchers.Main) {
     val mode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
@@ -37,6 +41,14 @@ class ThemePortImpl(private val context: Context) : ThemePort {
 
   override fun onSystemThemeChanged(listener: (Boolean) -> Unit) {
     listeners.add(listener)
+  }
+
+  override fun bindSystemBarAppearance(listener: ((Boolean) -> Unit)?) {
+    systemBarAppearanceListener = listener
+  }
+
+  override fun setSystemBarAppearance(darkIcons: Boolean) {
+    systemBarAppearanceListener?.invoke(darkIcons)
   }
 }
 

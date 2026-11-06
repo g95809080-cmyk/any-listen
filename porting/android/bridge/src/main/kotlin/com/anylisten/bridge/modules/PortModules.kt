@@ -198,6 +198,10 @@ class UiModule(
         registry.theme.onSystemThemeChanged { isDark -> ctx.emit(cb, isDark) }
         null
       }
+      "setSystemBarAppearance" -> {
+        registry.theme.setSystemBarAppearance(args.bool(0, true))
+        null
+      }
       else -> unsupported(method)
     }
 

@@ -26,7 +26,7 @@
 <header class="appbar">
   {#if back}
     <button class="ab-btn" aria-label={tm('mobile__back')} onclick={() => onback?.()}>
-      <SvgIcon name="back" />
+      <span class="ab-back-icon"><SvgIcon name="angle-right-solid" /></span>
     </button>
   {:else}
     <span class="ab-pad"></span>
@@ -81,6 +81,12 @@
     &:active {
       background-color: var(--color-primary-background-active);
     }
+  }
+  .ab-back-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: rotate(180deg);
   }
   .ab-actions {
     display: flex;

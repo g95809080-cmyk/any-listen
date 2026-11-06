@@ -127,13 +127,61 @@ html.mobile .checkbox .label {
 html.mobile .modal {
   align-items: flex-end;          /* 底部对齐 */
 }
-html.mobile .modal .content {
+html.mobile .modal > .content {
   width: 100% !important;
   min-width: 0 !important;
   max-width: 100% !important;
   max-height: 88dvh !important;
   min-height: 0 !important;
+  /* 底部弹窗在 edge-to-edge 下会画到系统导航栏后面，页脚按钮实际被遮住。
+     用内容区的安全区内边距把 footer 整体抬起来，背景仍铺满到屏幕底边。 */
+  padding-bottom: var(--safe-bottom, 0px) !important;
   border-radius: var(--sheet-radius) var(--sheet-radius) 0 0 !important;
+}
+/* 文件选择器内容很高，按 grid 居中会从 AppBar 中间开始，把返回键/标题截成
+   半个；同时列表容器获得焦点后 WebView 会画出两条黑色原生 outline。
+   改为从 AppBar 下方 8dp 起铺到底部，并去掉列表的无效焦点框。 */
+html.mobile .modal:has(> .content > .main [role='listbox']) {
+  display: flex !important;
+  flex-flow: column nowrap !important;
+  align-items: stretch !important;
+  justify-content: flex-end !important;
+  box-sizing: border-box !important;
+  padding-top: calc(var(--safe-top, 0px) + 64px) !important;
+}
+html.mobile .modal:has(> .content > .main [role='listbox']) > .content {
+  max-height: 100% !important;
+}
+html.mobile .modal .main [role='listbox'] {
+  outline: none !important;
+}
+/* 扩展消息可能列出很多导入失败项；正文滚动，底部操作按钮保持可见。 */
+html.mobile .modal > .content > .main.select {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+}
+html.mobile .modal > .content > .main.select + .footer {
+  padding-bottom: 15px;
+}
+/* 扩展设置的操作按钮在手机上换行，避免导出入口被裁掉。 */
+html.mobile .settings-item-config-checkbox-action {
+  flex-wrap: wrap;
+}
+/* 自定义源每行是「复选框 + 名称」和 Remove 两个 flex 子项。名称长度不同时
+   上游按内容宽度收缩，Remove 会在行内左右乱跳；让名称吃掉剩余宽度，
+   操作键统一贴右。 */
+html.mobile .settings-item-config-checkbox-item-content {
+  gap: 8px !important;
+}
+html.mobile .settings-item-config-checkbox-item-content > .checkbox {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+html.mobile .settings-item-config-checkbox-item-content > .btn {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 html.mobile .modal .header {
   height: 56px !important;
@@ -157,6 +205,31 @@ html.mobile .pagination .btn {
   min-width: var(--touch-min) !important;
   min-height: var(--touch-min) !important;
 }
+/* 分页器首尾是 span，不受上面 button 的 44dp 约束；统一 li 尺寸后
+   9 个条目正好 396dp，可完整落在 412dp 视口内，无需横向滚动。 */
+html.mobile .pagination li {
+  display: flex;
+  flex: 0 0 var(--touch-min);
+  align-items: stretch;
+  justify-content: center;
+  width: var(--touch-min);
+  min-width: var(--touch-min);
+  height: var(--touch-min);
+}
+html.mobile .pagination li > * {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+}
+/* 手机端最多同时出现「上一页 + 7 个页码 + 下一页」= 9 × 44dp = 396dp，
+   正好落在 412dp 视口内。首/末页图标与上一页/下一页重复，隐藏后无需横滑。 */
+html.mobile .pagination li.first,
+html.mobile .pagination li.last {
+  display: none !important;
+}
 
 /* 在线资源的桌面侧栏在手机上不足以显示来源名称，改为可横滑的来源条。 */
 html.mobile :is(.online-search-music, .online-songlist-list) {
@@ -169,7 +242,10 @@ html.mobile :is(.online-search-music, .online-songlist-list) > .source-list {
   min-width: 0 !important;
   max-width: none !important;
   height: var(--touch-min) !important;
-  margin: 0 12px 8px !important;
+  /* 392dp 下 5 个内置来源原本需要 386dp，比 369dp 的可视宽度多 17dp，
+     最后一个“咪咕音乐”会被切掉半字。外边距 12→8、单项 24→20 后总宽
+     降到约 362dp；更多来源仍保留横向滚动。 */
+  margin: 0 8px 8px !important;
   overflow: hidden !important;
 }
 html.mobile :is(.online-search-music, .online-songlist-list) > .source-list > .list {
@@ -184,15 +260,15 @@ html.mobile :is(.online-search-music, .online-songlist-list) > .source-list .lis
   flex: 0 0 auto;
   align-items: center;
   min-height: var(--touch-min);
-  padding: 0 12px !important;
+  padding: 0 10px !important;
   line-height: normal !important;
   white-space: nowrap;
 }
-/* 分页在窄屏上从第一页开始显示，超出部分可横滑。 */
+/* 分页整行居中；条目已收口到 44dp，不再让最后一个按钮被右侧裁掉。 */
 html.mobile :is(.online-search-music, .online-songlist-list) .pagination:has(> .pagination) {
-  justify-content: flex-start !important;
+  justify-content: center !important;
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 html.mobile :is(.online-search-music, .online-songlist-list) .pagination > .pagination {
   flex: 0 0 auto;
@@ -200,6 +276,53 @@ html.mobile :is(.online-search-music, .online-songlist-list) .pagination > .pagi
 html.mobile :is(.online-search-music, .online-songlist-list) .pagination ul {
   gap: 0 !important;
   padding: 0 !important;
+}
+/* Online 顶栏左侧是资源类型 Tab，右侧动态注入 Song/Songlist。412dp 下两组
+   只隔 8px，文字连在一起像一串重复标签；加细分隔，左组仍可横向滚动。 */
+html.mobile #online-header-right:has(*) {
+  flex: none;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-primary-background-active);
+}
+/* 歌单页右侧同时有「打开歌单 / 标签 / 排序」三组控件，桌面版一行放得下，
+   392dp 下会把左侧资源类型 Tab 挤到 0 并直接叠在一起。把资源类型和筛选控件
+   拆成两行；第二行独立横滑，既保留全部排序项，也不再遮住一级 Tab。 */
+html.mobile .view-container > .header:has(> #online-header-right > .online-songlist-header-right) {
+  display: grid !important;
+  grid-template-areas:
+    'types'
+    'filters' !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 4px 0 !important;
+  align-items: center;
+  height: auto !important;
+  padding: 4px 16px 8px !important;
+}
+html.mobile .view-container > .header:has(> #online-header-right > .online-songlist-header-right) > .list {
+  grid-area: types;
+  width: 100%;
+  min-width: 0;
+}
+html.mobile .view-container > .header:has(> #online-header-right > .online-songlist-header-right) > #online-header-right {
+  grid-area: filters;
+  width: 100%;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible;
+  border-left: 0 !important;
+  scrollbar-width: none;
+}
+html.mobile .view-container > .header:has(> #online-header-right > .online-songlist-header-right) .online-songlist-header-right {
+  flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+  gap: 8px !important;
+}
+html.mobile .online-songlist-header-right .tag-list > .label {
+  min-height: var(--touch-min);
+  padding: 0 10px !important;
 }
 
 /* ---------- 3. 弹层 → BottomSheet（B-10）---------- */
@@ -219,26 +342,42 @@ html.mobile .popup {
   padding: 8px 0 max(8px, var(--safe-bottom)) !important;
   overflow-y: auto !important;
   pointer-events: auto !important;
+  background-color: var(--color-content-background) !important;
   border-radius: var(--sheet-radius) var(--sheet-radius) 0 0 !important;
   box-shadow: 0 -2px 16px rgb(0 0 0 / 18%) !important;
   opacity: 1 !important;
   filter: none !important;
   transform: none !important;
-  z-index: 20 !important;
+  /* Modal 的本体/卡片是 99/100。菜单和抽屉可能从 Modal 内部打开，
+     必须盖在 Modal 上，否则会出现“点了按钮但菜单藏在弹窗后面”。 */
+  z-index: 120 !important;
 }
-/* scrim：fixed 子元素 + 负 z-index 覆盖整个视口 */
-html.mobile .menu::before,
-html.mobile .popup::before {
+/* 遮罩必须和抽屉同处 #root 的 stacking context，但作为独立层放在抽屉下方。
+   若用 `.menu/.popup::before` 铺满视口，负 z-index 的伪元素会盖在宿主的
+   background-color 之上、文字之下 → 浅色抽屉整体发灰、像被禁用；同时点
+   外面还会穿透到背后的按钮。改成 #root 的条件伪元素后：
+   - z-index 119 < 抽屉 120，抽屉本体保持主题色；
+   - 伪元素承载 40% 黑遮罩并吞掉背景点击，PopupDismiss 仍按坐标关闭。 */
+html.mobile #root:has(> .popup:not([inert]))::before,
+html.mobile #root:has(> .menu:not([inert]))::before {
   content: '' !important;
   position: fixed !important;
   inset: 0 !important;
-  z-index: -1 !important;
+  z-index: 119 !important;
   display: block !important;
   width: auto !important;
   height: auto !important;
   border: 0 !important;
   background: rgb(0 0 0 / 40%) !important;
   backdrop-filter: none !important;
+  pointer-events: auto !important;
+}
+/* 上游 `.popup::before` 是桌面气泡的尖角；BottomSheet 不需要，且它会被
+   fixed 定位拉离触发器，留下一个无来源的三角形。 */
+html.mobile .menu::before,
+html.mobile .popup::before {
+  content: none !important;
+  display: none !important;
 }
 /* 关闭态必须真正移出布局 —— D-22「弹层只能开不能关」的真凶就在这里。
    上游 `.popup` / `.menu` 卸载 DOM 的路径只有 `ontransitionend` → `render = false`，
@@ -252,6 +391,61 @@ html.mobile .popup::before {
 html.mobile .popup[inert],
 html.mobile .menu[inert] {
   display: none !important;
+}
+/* 在线歌单的标签筛选也是 `.popup`，但它的关闭信号只有 `aria-hidden`，没有
+   `inert`。全局 BottomSheet 规则会把关闭态的它直接钉在屏幕底部，遮住分页和
+   底部 Tab；这里按它自己的状态隐藏，并在打开时补一层可关闭的遮罩。 */
+html.mobile .online-songlist-header-right .tag-list > .popup[aria-hidden='true'] {
+  display: none !important;
+}
+html.mobile .online-songlist-header-right .tag-list > .popup[aria-hidden='false'] {
+  display: flex !important;
+}
+html.mobile .online-songlist-header-right .tag-list:has(> .popup[aria-hidden='false'])::before {
+  content: '' !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 119 !important;
+  display: block !important;
+  background: rgb(0 0 0 / 40%) !important;
+}
+/* 上面的二级 Tab 规则会误把标签弹层内部的 `.list` 也改成 44dp 横排；
+   标签应保持正常换行并交给弹层自身纵向滚动。 */
+html.mobile .header > #online-header-right .online-songlist-header-right .tag-list > .popup > .list {
+  display: block !important;
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  font-size: 13px !important;
+}
+html.mobile .online-songlist-header-right .tag-list > .popup .tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0 12px !important;
+  font-size: 13px;
+}
+/* Dropdown 的 `.menu` 被 Portal 在 `.popup` 里，上面把两者都改成了 fixed
+   BottomSheet，结果内层菜单会脱离父抽屉、按自己的内容高度再叠一层：
+   子项文字压在 TabBar 上，而外层 popup 只按 padding 算成 56dp。
+   根级右键菜单仍保持 fixed；只有 popup 内的菜单回到内容流。 */
+html.mobile .popup .menu {
+  position: static !important;
+  inset: auto !important;
+  width: auto !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  filter: none !important;
+  transform: none !important;
+  z-index: auto !important;
 }
 /* 菜单项 34px → 56dp */
 html.mobile .menu .menu-item,
@@ -274,8 +468,11 @@ html.mobile .popup .popup-content {
   width: 100% !important;
   padding: 0 !important;
 }
-/* 播放队列（PlaylistBtn 内 .container 是 500px 宽，B-04） */
-html.mobile .popup .container {
+/* 播放队列（PlaylistBtn 内 .container 是 500px 宽，B-04）。
+   只命中 popup 的直接内容容器：`.popup .container` 会把 Checkbox 内部的
+   `.container`（勾选框方块）也拉到 100%，倍速弹窗的 “Pitch compensation”
+   因此被挤出屏幕。 */
+html.mobile .popup > .popup-content > .container {
   width: 100% !important;
   min-height: 0 !important;
   max-height: none !important;
@@ -312,7 +509,7 @@ html.mobile #root > .container {
   border-radius: var(--sheet-radius) var(--sheet-radius) 0 0 !important;
   opacity: 1 !important;
   transform: none !important;
-  z-index: 20 !important;
+  z-index: 120 !important;
 }
 
 /* ---------- 4. 歌曲列表：4 列 → 双行卡片（B-03）---------- */
@@ -397,6 +594,39 @@ html.mobile .view-container > .header .title {
 html.mobile .view-container > .header .control-btns {
   gap: 8px;
   margin-top: 10px !important;
+}
+/* 在线榜单/歌单详情复用 MusicList Header：右侧是 flex:auto 的列，
+   但上游没有 min-width:0，桌面宽屏下正常，412dp 上会按按钮的 max-content
+   把容器撑到 364dp，连同左侧 96dp 封面一起超出屏幕。 */
+html.mobile .view-container > .header > .right {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  width: auto !important;
+}
+html.mobile .view-container > .header > .right .info,
+html.mobile .view-container > .header > .right .control-btns {
+  min-width: 0;
+}
+html.mobile .view-container > .header .control-btns > .btns {
+  flex: 0 1 auto !important;
+  flex-flow: row wrap !important;
+  row-gap: 8px !important;
+  min-width: 0;
+}
+/* BtnMerge 的第二项是 Dropdown 的 `.container.btn`，上游只给 1.6rem 宽。
+   44dp 视口下实测仅 25.6px，More 的可点区域明显偏窄；合并组本身也允许
+   被压缩，窄屏会把两个按钮一起挤小。固定尾部命中区，组不参与收缩。 */
+html.mobile .btn-merge {
+  flex: none;
+}
+html.mobile .btn-merge > .container.btn {
+  flex: 0 0 var(--touch-min) !important;
+  width: var(--touch-min) !important;
+  min-width: var(--touch-min) !important;
+  height: var(--touch-min) !important;
+  min-height: var(--touch-min) !important;
+  aspect-ratio: auto !important;
+  padding: 10px !important;
 }
 
 /* ---------- 5. 播放详情：50/50 → 纵向（B-05 B-16）---------- */
@@ -526,6 +756,36 @@ html.mobile .header > .list .list-item .label {
   min-height: var(--touch-min);
   padding: 0 2px !important;
 }
+/* 在线/设置的二级 Tab 会 Portal 到 #online-header-right，隔了一层 div，
+   因此命中不到上面的 `.header > .list`。右侧条目同样需要 44dp 命中区。 */
+html.mobile .header > #online-header-right {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  min-height: var(--touch-min);
+}
+html.mobile .header > #online-header-right .list {
+  display: flex !important;
+  flex: 0 0 auto;
+  flex-flow: row nowrap;
+  gap: var(--gap-min) !important;
+  align-items: center;
+  min-height: var(--touch-min);
+  overflow-x: auto;
+  font-size: 14px !important;
+  scrollbar-width: none;
+}
+html.mobile .header > #online-header-right .list::-webkit-scrollbar {
+  display: none;
+}
+html.mobile .header > #online-header-right .list .list-item,
+html.mobile .header > #online-header-right .list .label {
+  min-height: var(--touch-min);
+}
+html.mobile .header > #online-header-right .list .label {
+  padding: 0 2px !important;
+}
 
 /* ---------- 8. 卡片网格：300px → 150px（2 列）---------- */
 /* 只对 display:grid 的元素生效，非 grid 的 ul 完全不受影响 → 可安全放宽选择器。
@@ -540,71 +800,442 @@ html.mobile ul:not(.ext-list) {
   gap: 12px !important;
   padding: 0 16px 16px !important;
 }
-
-/* ---------- 9. 设置页：两栏 → 左栏横滚 chip 条（B-07）---------- */
-/* ⚠️ 容器方向必须一起改。上游 `.settings-app-container` 是 `display:flex` 的**横向**两栏
-   （左导航 + 右内容）。把左导航改成横滚 chip 条之后，如果容器仍是 row：
-   16 个 chip 横排把容器撑到 **1793px**（实测），右内容区被推到 x=1793、`clientWidth: 0`
-   —— 整页只剩一条导航，下面全空白，所有设置项都点不到。
-   §9.1 给扩展设置的 `.settings-extension-container` 做了这一步，一级容器漏了。 */
-html.mobile .settings-app-container {
-  flex-flow: column nowrap !important;
-  height: 100% !important;
-  min-height: 0 !important;
+/* 在线歌单卡是桌面横向卡：`min-width:300px` + 定高 110px。移动端两列时
+   每格只有约 174dp，卡片却仍按 300dp 排版，右列文字直接越出屏幕。
+   歌单信息比榜单多（标题、作者、日期、歌曲数、播放量），改用单列信息卡；
+   排行榜卡片不包含 `.songlist-info`，继续保留原来的两列封面网格。 */
+html.mobile .songlist-list ul:has(.songlist-info) {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 10px !important;
+  padding: 0 16px 16px !important;
 }
-html.mobile .settings-app-list {
-  flex: none;
-  /* ⚠️ 这里**不能**写 `width: auto`（D-11 的根因）。
-   *
-   * `.list` 是 `.settings-app-list` 的唯一子元素，横滑条由它承担（`overflow-x: auto`）。
-   * `width: auto` 让 `.settings-app-list` 按**内容**撑开 —— 16 个 chip 把它撑到实测
-   * **1793.12px**，于是 `.list` 自己的 `scrollWidth == clientWidth == 1793`
-   * （它不溢出，`overflow-x:auto` 形同虚设），而真正裁剪的是外层 `.content`
-   * （`overflow-x: hidden`）→ 后 10 项永久不可达，真实滑动 14 步 `scrollLeft` 恒为 0。
-   *
-   * 必须是 `100%`：等于父级（`.settings-app-container` 412dp）宽，让 `.list` 成为
-   * 真正溢出 1793 的滚动容器。`min-width: 0` 顺带解掉 flex 子项的 auto 最小尺寸
-   * （默认 min-width:auto 会让它拒绝收缩到内容宽度以下）。 */
-  width: 100% !important;
-  max-width: 100% !important;
+html.mobile .songlist-list ul > li > a.list-item:has(.songlist-info) {
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0 !important;
-  margin: 0 0 12px !important;
-  overflow: visible !important;
-  background: transparent !important;
-  border-radius: 0;
-}
-html.mobile .settings-app-list .list {
-  display: flex !important;
-  flex-flow: row nowrap !important;
-  gap: var(--gap-min);
   height: auto !important;
-  padding: 0 16px 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  scroll-snap-type: x mandatory;
+  min-height: 112px;
+  gap: 12px;
+  padding: 8px !important;
+  background-color: var(--color-primary-light-300-alpha-900);
+  border-radius: 10px;
 }
-html.mobile .settings-app-list .list::-webkit-scrollbar {
-  display: none;
+html.mobile .songlist-list ul > li > a.list-item:has(.songlist-info) > .image {
+  flex: none;
+  width: 96px !important;
+  height: 96px !important;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
 }
-html.mobile .settings-app-list .list-item {
-  flex: none !important;
-  height: var(--touch-min) !important;
-  padding: 0 14px !important;
-  font-size: 13px !important;
-  line-height: var(--touch-min) !important;
+html.mobile .songlist-list ul > li > a.list-item:has(.songlist-info) > .desc {
+  display: flex;
+  flex: 1 1 auto;
+  flex-flow: column nowrap;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 !important;
+}
+html.mobile .songlist-list ul > li > a.list-item:has(.songlist-info) .desc h4 {
+  display: -webkit-box;
+  max-height: 2.7em;
+  overflow: hidden;
+  font-size: 15px !important;
+  line-height: 1.35 !important;
+  text-align: left;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+html.mobile .songlist-list ul > li > a.list-item:has(.songlist-info) .author,
+html.mobile .songlist-list ul > li > a.list-item:has(.songlist-info) .time {
+  margin-top: 2px !important;
+  overflow: hidden;
+  font-size: 12px !important;
+  line-height: 1.35;
+  text-align: left;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  scroll-snap-align: start;
-  background-color: var(--color-primary-light-300-alpha-900) !important;
-  border-radius: 22px !important;
 }
-html.mobile .settings-app-list .list-item.active {
+html.mobile .songlist-list ul > li > a.list-item:has(.songlist-info) .songlist-info {
+  gap: 12px !important;
+  margin-top: 4px !important;
+  font-size: 12px !important;
+  line-height: 1.3;
+}
+
+/* ---------- 9. 设置页：一级分组 → 二级详情 ---------- */
+html.mobile .m-settings-page,
+html.mobile .m-settings-home,
+html.mobile .m-settings-detail {
+  background-color: var(--color-primary-light-400-alpha-900);
+}
+html.mobile .m-settings-home {
+  height: 100%;
+  min-height: 0;
+}
+html.mobile .m-settings-scroll {
+  height: 100%;
+  padding: 2px 0 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+html.mobile .m-settings-group-title {
+  height: 34px;
+  padding: 9px 20px 5px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 20px;
+  color: var(--color-font-label);
+  letter-spacing: 0.3px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.mobile .m-settings-group {
+  margin: 0 16px;
+  overflow: hidden;
+  background-color: var(--color-content-background);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+}
+html.mobile .m-settings-group + .m-settings-group-title {
+  margin-top: 8px;
+}
+html.mobile .m-settings-nav-row {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 14px;
+  color: var(--color-font);
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+html.mobile .m-settings-nav-row + .m-settings-nav-row::before {
+  position: absolute;
+  top: 0;
+  right: 14px;
+  left: 60px;
+  height: 1px;
+  content: '';
+  background-color: var(--color-border);
+}
+html.mobile .m-settings-nav-row:active {
+  background-color: var(--color-primary-background-hover);
+}
+html.mobile .m-settings-nav-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: var(--color-primary);
+  background-color: var(--color-primary-light-300-alpha-900);
+  border-radius: 10px;
+}
+html.mobile .m-settings-nav-icon .svg-icon {
+  width: 19px;
+  height: 19px;
+}
+html.mobile .m-settings-nav-label {
+  flex: auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.mobile .m-settings-nav-chevron {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  color: var(--color-font-label);
+  opacity: 0.62;
+}
+html.mobile .m-settings-nav-chevron .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+html.mobile .m-settings-detail {
+  height: 100%;
+  min-height: 0;
+}
+html.mobile .m-settings-detail-scroll {
+  padding: 4px 16px 16px;
+}
+html.mobile .m-settings-detail-card {
+  background-color: var(--color-content-background);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+}
+html.mobile .m-settings-detail-card > .settings-item {
+  padding: 0;
+  margin: 0;
+}
+html.mobile .m-settings-detail-card > .settings-item + .settings-item {
+  border-top: 1px solid var(--color-border);
+}
+html.mobile .m-settings-detail-card > .settings-item > .settings-item-title-container {
+  padding: 14px 16px;
+}
+html.mobile .m-settings-detail .settings-item-title-content {
+  padding-bottom: 8px;
+}
+html.mobile .m-settings-detail .settings-item-title {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--color-font);
+}
+html.mobile .m-settings-detail .settings-item-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-font-label);
+  opacity: 1;
+}
+html.mobile .m-settings-detail .settings-item-content,
+html.mobile .m-settings-detail .settings-item-input,
+html.mobile .m-settings-detail .settings-about {
+  margin-left: 0;
+}
+html.mobile .m-settings-detail .settings-about {
+  font-size: 14px;
+  line-height: 1.6;
+}
+html.mobile .m-settings-detail .settings-about p {
+  margin-bottom: 10px;
+}
+html.mobile .m-settings-detail .settings-item-content {
+  padding-top: 2px;
+}
+html.mobile .m-settings-detail .settings-item-content .gap-top {
+  flex-flow: row wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+html.mobile .m-settings-detail .settings-item-content .gap-top > .input {
+  flex: 1 1 100%;
+}
+html.mobile .m-settings-detail .input,
+html.mobile .m-settings-detail .textarea {
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 44px;
+  padding: 10px 12px !important;
+  font-size: 14px !important;
+  background-color: var(--color-primary-background) !important;
+  border-radius: 10px !important;
+}
+html.mobile .m-settings-detail textarea.textarea {
+  height: 110px !important;
+  min-height: 110px;
+  resize: vertical;
+}
+
+html.mobile .m-setting-toggle {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 16px;
+  color: var(--color-font);
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+html.mobile .m-setting-toggle:active {
+  background-color: var(--color-primary-background-hover);
+}
+html.mobile .m-setting-copy {
+  display: flex;
+  flex: auto;
+  flex-flow: column nowrap;
+  gap: 3px;
+  min-width: 0;
+}
+html.mobile .m-setting-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--color-font);
+}
+html.mobile .m-setting-desc {
+  display: block;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-font-label);
+}
+html.mobile .m-setting-switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  background-color: var(--color-primary-light-300-alpha-800);
+  border-radius: 999px;
+  transition: background-color 0.18s ease;
+}
+html.mobile .m-setting-switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  content: '';
+  background-color: var(--color-primary-light-1000);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px var(--color-primary-alpha-800);
+  transition: transform 0.18s ease;
+}
+html.mobile .m-setting-toggle.on .m-setting-switch {
+  background-color: var(--color-primary);
+}
+html.mobile .m-setting-toggle.on .m-setting-switch::after {
+  transform: translateX(18px);
+}
+
+html.mobile .m-setting-field {
+  padding: 14px 16px;
+}
+html.mobile .m-setting-field-head {
+  margin-bottom: 10px;
+}
+html.mobile .m-setting-radio-list {
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border);
+}
+html.mobile .m-setting-choice {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 0;
+  color: var(--color-font);
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+html.mobile .m-setting-choice + .m-setting-choice {
+  border-top: 1px solid var(--color-border);
+}
+html.mobile .m-setting-choice:disabled {
+  opacity: 0.45;
+}
+html.mobile .m-setting-radio-dot {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--color-font-label);
+  border-radius: 50%;
+}
+html.mobile .m-setting-choice.checked .m-setting-radio-dot {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+html.mobile .m-setting-choice.checked .m-setting-radio-dot::after {
+  position: absolute;
+  inset: 5px;
+  content: '';
+  background-color: var(--color-primary-light-1000);
+  border-radius: 50%;
+}
+html.mobile .m-setting-choice-label {
+  flex: auto;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+html.mobile .m-setting-select,
+html.mobile .m-setting-select .select {
+  display: block;
+  width: 100%;
+}
+html.mobile .m-setting-select .select {
+  font-size: 14px;
+}
+html.mobile .m-setting-select .select .button {
+  height: 44px;
+  border-radius: 10px;
+}
+html.mobile .m-setting-select .select .list {
+  max-height: 260px;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px var(--color-primary-alpha-800);
+}
+html.mobile .m-setting-select .select .list-item {
+  min-height: 44px;
+  line-height: 44px;
+}
+
+html.mobile .m-settings-empty {
+  display: flex;
+  flex: auto;
+  flex-flow: column nowrap;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 32px 40px 56px;
+  text-align: center;
+}
+html.mobile .m-settings-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  color: var(--color-primary);
+  background-color: var(--color-primary-light-300-alpha-900);
+  border-radius: 20px;
+}
+html.mobile .m-settings-empty-icon .svg-icon {
+  width: 32px;
+  height: 32px;
+}
+html.mobile .m-settings-empty h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
   font-weight: 600;
-  background-color: var(--color-primary-alpha-300) !important;
+  line-height: 1.35;
 }
-html.mobile .settings-app-list .list-item > svg {
-  display: none !important;
+html.mobile .m-settings-empty p {
+  max-width: 280px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-font-label);
 }
-/* 设置行 36px → 56dp */
+html.mobile .m-settings-empty button {
+  min-height: 44px;
+  padding: 0 18px;
+  margin-top: 18px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-primary);
+  background-color: var(--color-primary-light-300-alpha-900);
+  border: 0;
+  border-radius: 22px;
+}
+
+/* 扩展设置仍复用上游 `.settings-list`，移动端只做触控与间距适配。 */
 html.mobile .settings-list {
   margin: 0 !important;
   padding: 0 16px 32px !important;
@@ -631,10 +1262,11 @@ html.mobile .settings-item-input {
 /* ---------- 9.1 扩展设置二级导航：18% → 横向 chip 条 ---------- */
 /* 上游 `ExtenstionList.svelte` 的 `.settings-extension-list { width: 18%; max-width: 200px }`：
    桌面 1020px 下 183px 够用，**411dp 下只有 74px** —— 实测被挤成一列单字（"WebDAV" 竖排），
-   二级导航完全不可读。与一级导航（§9）统一处理：整条横滑、44dp 药丸。 */
+   二级导航完全不可读。这里保留扩展内部的二级横滑导航，整条横滑、44dp 药丸。 */
 html.mobile .settings-extension-container {
   flex-flow: column nowrap !important;
-  padding-top: 0 !important;
+  padding-top: 4px !important;
+  background-color: var(--color-primary-light-400-alpha-900);
 }
 html.mobile .settings-extension-list {
   flex: none;
@@ -653,6 +1285,7 @@ html.mobile .settings-extension-list .list {
   padding: 0 16px 8px;
   overflow-x: auto;
   overflow-y: hidden;
+  scroll-padding-inline: 16px;
   scrollbar-width: none;
 }
 html.mobile .settings-extension-list .list::-webkit-scrollbar {
@@ -671,6 +1304,28 @@ html.mobile .settings-extension-list .list-item {
 html.mobile .settings-extension-list .list-item.active {
   font-weight: 600;
   background-color: var(--color-primary-alpha-300) !important;
+}
+
+/* ---------- 9.1.1 日志输出：窄屏下操作区换行 ---------- */
+html.mobile .m-settings-page .log-container {
+  margin: 4px 12px 12px !important;
+}
+html.mobile .m-settings-page .log-header {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 0 10px !important;
+}
+html.mobile .m-settings-page .log-header-type {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+html.mobile .m-settings-page .log-header-action {
+  width: 100%;
+  justify-content: flex-end;
+}
+html.mobile .m-settings-page .log-main {
+  border-radius: 12px;
 }
 
 /* ---------- 9.2 曲库表头：桌面五列 → 移动端隐藏 ---------- */
@@ -993,12 +1648,21 @@ html.mobile .play-detail .lyric .line-content.active,
 html.mobile .play-detail .lyric.lrc-active-zoom .line-content.active {
   padding-top: 8px !important;
   padding-bottom: 8px !important;
-  transform: scale(1.02);
+  /* 1.02 倍横向放大在 412dp 视口上会左右各溢出一截；保留颜色和字重强调。 */
+  transform: none;
 }
 /* 未播放歌词用 --color-300 时在浅色详情页上只有约 1.7:1 对比度，整片歌词几乎看不见。
    这里改用中性灰 650（白底约 4.7:1），已播放/当前行仍用主题蓝区分。 */
 html.mobile .play-detail .lyric .line-mode .font-lrc {
   color: var(--color-650) !important;
+}
+html.mobile .play-detail .lyric .line-content.font-mode .font-lrc {
+  color: var(--color-650) !important;
+}
+/* font-mode 的字符由 span 的 background-clip:text 上色；父级 color 对它无效。
+   未播放部分取 --color-650，播放时的蓝色渐变仍由原 background-image 覆盖。 */
+html.mobile .play-detail .lyric .line-content.font-mode > .line > .font-lrc > span {
+  background-color: var(--color-650) !important;
 }
 html.mobile .play-detail .lyric .line-mode.played .font-lrc,
 html.mobile .play-detail .lyric .line-mode.active .font-lrc {
@@ -1101,8 +1765,235 @@ html.mobile .play-detail .footer .control > .side > .container > * {
   background: transparent;
   border: 0;
 }
+/* 辅控图标上游用 svg opacity: .5、评论键再叠 button opacity: .5，
+   在浅色详情页上几乎看不见。命中区已经 44dp，图标本身也需保持可辨识；
+   颜色继续跟随主题，避免深色主题出现深蓝图标压在深色背景上。 */
+html.mobile .play-detail .footer .control > .side button {
+  color: var(--color-button-font) !important;
+  opacity: 1 !important;
+}
+html.mobile .play-detail .footer .control > .side svg {
+  opacity: 0.8 !important;
+}
+html.mobile .play-detail .footer .control > .side :is(button, .container):active svg {
+  opacity: 1 !important;
+}
 /* 播放状态文字（"Playing..." / 错误提示）：贴底、不吃命中区 */
 html.mobile .play-detail .play-status {
   bottom: 0 !important;
   height: 16px !important;
+}
+
+/* ---------- 16. 扩展详情：桌面左右分栏 → 手机单列 ----------
+ *
+ * 上游详情弹窗按桌面设计：56dp 图标 + 标题/元信息 + 150dp 操作区同排，
+ * 正文再拆成 left + 120dp aside。412dp 下标题只剩 128dp，日期/引擎版本逐字换行，
+ * 且 84% 弹窗高度没有扣除系统导航栏，底部链接会压在导航栏下面。
+ * 这里用详情页独有的 `.header__icon` 定位，不影响其它 Modal。
+ */
+html.mobile .modal > .content:has(> main.main > .header > .header__icon) {
+  box-sizing: border-box !important;
+  height: min(88dvh, calc(100dvh - var(--safe-top) - 8px)) !important;
+  max-height: calc(100dvh - var(--safe-top) - 8px) !important;
+  padding-bottom: var(--safe-bottom) !important;
+}
+html.mobile .modal > .content > main.main:has(> .header > .header__icon) {
+  min-height: 0;
+  padding: 0 16px !important;
+}
+html.mobile .modal > .content > main.main > .header:has(> .header__icon) {
+  display: grid !important;
+  flex: none !important;
+  grid-template-areas:
+    'icon info'
+    'actions actions';
+  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 8px 12px;
+  align-items: start;
+  height: auto !important;
+  padding: 16px 0 12px !important;
+}
+html.mobile .modal > .content > main.main > .header > .header__icon {
+  grid-area: icon;
+  width: 48px !important;
+  height: 48px !important;
+}
+html.mobile .modal > .content > main.main > .header > .header__info {
+  grid-area: info;
+  width: 100%;
+  min-width: 0;
+}
+html.mobile .modal > .content > main.main > .header .header__title {
+  font-size: 18px !important;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+html.mobile .modal > .content > main.main > .header .header__meta {
+  flex-wrap: wrap;
+  gap: 2px 0;
+  min-width: 0;
+}
+html.mobile .modal > .content > main.main > .header .header__meta > span {
+  font-size: 12px;
+}
+html.mobile .modal > .content > main.main > .header .header__meta > span::before {
+  margin: 0 6px;
+}
+html.mobile .modal > .content > main.main > .header .header__action {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  grid-area: actions;
+  gap: 8px;
+  justify-content: flex-end;
+  width: 100%;
+  margin: 0 !important;
+}
+html.mobile .modal > .content > main.main > .header .header__action > .btn {
+  width: auto !important;
+  min-width: 80px !important;
+  height: var(--touch-min) !important;
+  padding: 0 16px !important;
+}
+/* 正文和侧栏改为一个连续滚动区，避免 readme 与元数据各自出现独立小滚动。 */
+html.mobile .modal > .content > main.main:has(> .header > .header__icon) > div.main {
+  flex: 1 1 auto !important;
+  flex-flow: column nowrap !important;
+  min-height: 0 !important;
+  padding-bottom: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+html.mobile .modal > .content > main.main > div.main > .left {
+  flex: none !important;
+  width: 100%;
+  height: auto;
+  min-height: auto;
+  overflow: visible;
+  border-right: 0;
+}
+html.mobile .modal > .content > main.main > div.main > .left > .list {
+  display: flex;
+  min-height: var(--touch-min);
+  overflow-x: auto;
+  font-size: 14px;
+  scrollbar-width: none;
+}
+html.mobile .modal > .content > main.main > div.main > .left > .list::-webkit-scrollbar {
+  display: none;
+}
+html.mobile .modal > .content > main.main > div.main > .left > .list .list-item,
+html.mobile .modal > .content > main.main > div.main > .left > .list .label {
+  min-height: var(--touch-min);
+}
+html.mobile .modal > .content > main.main > div.main > .left > .list .label {
+  padding: 0 2px !important;
+}
+html.mobile .modal > .content > main.main > div.main > .left > .content {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin-top: 8px;
+  padding-right: 0 !important;
+  overflow: visible !important;
+}
+/* Contributes 自己还包了一层 overflow: scroll。安卓 WebView 在这个嵌套
+   滚动层的左缘会把首个字形裁成半个（实测 “Permissions” 的 P）。
+   把内层也展开，统一交给外层 div.main 滚动。 */
+html.mobile .modal > .content > main.main > div.main > .left > .content > .content:has(.section__title) {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding-right: 0 !important;
+  overflow: visible !important;
+}
+html.mobile .modal > .content > main.main > div.main > .left > .content .readme {
+  max-height: none;
+  padding-right: 0;
+  overflow: visible;
+}
+html.mobile .modal > .content > main.main > div.main > .left > .content .readme-content {
+  overflow: visible;
+}
+html.mobile .modal > .content > main.main > div.main > .aside {
+  flex: none !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin-top: 16px;
+  overflow: visible;
+  border-top: 1px solid var(--color-border);
+}
+html.mobile .modal > .content > main.main > div.main > .aside .aside__content {
+  gap: 8px;
+  padding: 12px 0 0;
+  overflow: visible;
+}
+html.mobile .modal > .content > main.main > div.main > .aside .meta-item {
+  display: grid;
+  grid-template-columns: minmax(96px, 34%) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  font-size: 13px;
+}
+html.mobile .modal > .content > main.main > div.main > .aside .meta-label {
+  min-width: 0 !important;
+  font-size: 12px;
+  line-height: 1.4;
+}
+html.mobile .modal > .content > main.main > div.main > .aside .meta-value {
+  min-width: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+html.mobile .modal > .content > main.main > div.main > .aside .meta-item > .btn {
+  justify-self: start;
+  width: auto;
+  min-width: var(--touch-min);
+  padding: 0;
+  text-align: left;
+}
+
+/* ---------- 17. 播放队列：内部列表滚动 + 触屏常显操作 ----------
+ *
+ * 上游音频队列的虚拟列表按内容高度 1040dp 撑开，真正滚动的是外层抽屉；
+ * 同时行内“播放 / 定位 / 删除”依赖 hover 才出现，触摸设备永远看不到。
+ * 把队列各层高度收回到抽屉视口，保留 44dp 操作键并常显。
+ */
+html.mobile .popup:has(.list[role='listbox']) > .popup-content {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden;
+}
+html.mobile .popup:has(.list[role='listbox']) > .popup-content > .container {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden;
+}
+html.mobile .popup:has(.list[role='listbox']) > .popup-content > .container > .container {
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden;
+}
+html.mobile .popup:has(.list[role='listbox']) .list[role='listbox'] {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+}
+@media (pointer: coarse) {
+  html.mobile .popup:has(.list[role='listbox']) .btns {
+    flex: 0 0 auto !important;
+    opacity: 1 !important;
+  }
 }

@@ -19,7 +19,7 @@
   const tabs: Tab[] = [
     { to: '/library', icon: 'music_library', label: tm('mobile__tab_library') },
     { to: '/online', icon: 'sound_cloud', label: tm('mobile__tab_online') },
-    { to: '/settings', icon: 'setting', label: t('setting') },
+    { to: '/settings', icon: 'settings', label: t('setting') },
   ]
 
   const isActive = (to: string) =>

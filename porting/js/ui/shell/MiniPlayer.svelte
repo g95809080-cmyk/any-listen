@@ -1,6 +1,7 @@
 <script lang="ts">
   import Pic from '@ui/components/layout/PlayBar/components/Pic.svelte'
   import PlayInfo from '@ui/components/layout/PlayBar/components/PlayInfo.svelte'
+  import PlaylistBtn from '@ui/components/common/PlaylistBtn/index.svelte'
   import SvgIcon from '@ui/components/base/SvgIcon.svelte'
   import { actions } from '@ui/shared/actions'
   import { playing } from '@ui/modules/player/reactive.svelte'
@@ -30,9 +31,9 @@
   >
     <SvgIcon name={$playing ? 'pause' : 'play'} />
   </button>
-  <button class="mini-btn" aria-label={t('player__list')} onclick={() => setShowPlayDetail(true)}>
-    <SvgIcon name="playlist" />
-  </button>
+  <div class="mini-btn mini-queue">
+    <PlaylistBtn />
+  </div>
 </div>
 
 <style lang="less">
@@ -99,6 +100,24 @@
     }
     &:active {
       opacity: 0.6;
+    }
+  }
+  .mini-queue {
+    & :global(button.container) {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      color: var(--color-font);
+    }
+    & :global(.icon) {
+      width: 24px;
+      height: 24px;
+    }
+    & :global(.icon svg) {
+      opacity: 1;
     }
   }
 </style>

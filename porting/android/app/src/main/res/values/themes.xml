@@ -9,7 +9,8 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- 默认浅色页面用深色图标；Web 侧会按主题/播放详情动态切换。 -->
+        <item name="android:windowLightStatusBar">true</item>
         <!-- 内容延伸到刘海区：页面用 env(safe-area-inset-*) 自行避让 -->
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>

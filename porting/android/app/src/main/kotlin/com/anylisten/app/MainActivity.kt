@@ -28,6 +28,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.anylisten.ports.PortErrorCode
 import com.anylisten.ports.PortException
@@ -252,6 +253,7 @@ class MainActivity : ComponentActivity() {
     webViewAttached = true
 
     installInsetsBridge(webView)
+    bindSystemBarAppearance()
     bindPortsToActivity()
     setupBackHandling()
     requestCorePermissions()
@@ -307,6 +309,7 @@ class MainActivity : ComponentActivity() {
     }
     if (ownsBindings) {
       registry.bindUiPorts(null, null, AppGraph.foregroundServiceController)
+      registry.theme.bindSystemBarAppearance(null)
     }
     rootLayout.removeView(webView)
     when {
@@ -592,6 +595,22 @@ class MainActivity : ComponentActivity() {
       windowInsets
     }
     wv.requestApplyInsets()
+  }
+
+  /**
+   * 状态栏图标不能固定为白或黑：列表/设置页是浅色，播放详情与深色主题是深色底。
+   * Web 侧根据当前主题和播放详情可见性算出 darkIcons，经 theme 端口回传到这里。
+   */
+  private fun bindSystemBarAppearance() {
+    registry.theme.bindSystemBarAppearance { darkIcons ->
+      runOnUiThread {
+        if (isFinishing || isDestroyed || !webViewAttached) return@runOnUiThread
+        WindowCompat.getInsetsController(window, webView).apply {
+          isAppearanceLightStatusBars = darkIcons
+          isAppearanceLightNavigationBars = false
+        }
+      }
+    }
   }
 
   /**

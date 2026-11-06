@@ -212,6 +212,12 @@ function createHttpPort(): HttpPort {
     setProxy(proxy) {
       return callPort('http.setProxy', [proxy])
     },
+    registerProxyTarget(name, url, headers) {
+      return callPort('http.registerProxyTarget', [name, url, headers])
+    },
+    unregisterProxyTarget(name) {
+      return callPort('http.unregisterProxyTarget', [name])
+    },
   }
 }
 
@@ -340,6 +346,9 @@ const themePort: ThemePort = {
     void callPort('theme.onSystemThemeChanged', [cb], { keepCallbacks: true }).catch(
       logSubscribeError('theme.onSystemThemeChanged')
     )
+  },
+  setSystemBarAppearance(darkIcons) {
+    return callPort('theme.setSystemBarAppearance', [darkIcons])
   },
 }
 

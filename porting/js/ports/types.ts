@@ -174,6 +174,8 @@ export interface HttpPort {
   ): Promise<{ filePath: string; size: number; sha256: string }>
   cancel(id: string): Promise<void>
   setProxy(proxy: { host: string; port: string } | null): Promise<void>
+  registerProxyTarget(name: string, url: string, headers: Record<string, string>): Promise<void>
+  unregisterProxyTarget(name: string): Promise<void>
 }
 
 /**
@@ -301,6 +303,11 @@ export interface PowerPort {
 export interface ThemePort {
   getSystemIsDark(): Promise<boolean>
   onSystemThemeChanged(cb: (isDark: boolean) => void): void
+  /**
+   * 设置系统状态栏图标明暗。
+   * `darkIcons=true` 表示深色图标（浅色页面），false 表示浅色图标（深色页面）。
+   */
+  setSystemBarAppearance(darkIcons: boolean): Promise<void>
 }
 
 export interface ClipboardPort {

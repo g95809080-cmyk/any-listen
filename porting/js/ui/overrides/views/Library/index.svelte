@@ -3,33 +3,22 @@
    * O-2 —— 曲库页的移动端覆盖（**整文件覆盖**，由 vite 覆写表顶替
    * `@/views/Library/index.svelte`，`source/` 一字未改）。
    *
-   * 与上游的差异只有模板里 `{#if listInfo}` 那一块，**script 段一行未动**
-   * （store 订阅、两个 `$effect`、`handleScroll`、`musicList` 绑定、`buildActiveListInfo`
-   * 全部逐行保留）—— 这里只做"补空态"，不重构。
+   * 上游只有「某个歌单的歌曲列表」，歌单一览在桌面 Aside 里。移动壳不渲染 Aside，
+   * 而上游 `$effect` 在没有 `id` 时会把路由补成上次选择或 `love`，于是用户看到的
+   * 第一屏永远是「我喜欢」，收藏/导入的歌单没有入口。
    *
-   * 上游模板是：
-   * ```svelte
-   * {#if listInfo}
-   *   <MusicList … />
-   * {/if}
-   * ```
-   * `listInfo` 是 `$derived(buildActiveListInfo(...))`，`$query.id` 为空时返回 `undefined`，
-   * 而**没有 else 分支** → 内容区一个节点都不渲染（纯白，控制台不报错）。
+   * 本覆盖把曲库明确分成两级：
+   * 1. `/library`（无 `id`）→ `MobileLibraryLists`：默认「我喜欢」「试听列表」+ 顶层用户歌单；
+   * 2. `/library?id=…` → 原来的 `MusicList` 歌曲页；空列表显示 `MobileEmptyState`。
    *
-   * 三种状态：
-   * 1. `listInfo` 有值且列表非空 → 原样渲染 `MusicList`；
-   * 2. `listInfo` 有值但列表为空 → `MobileEmptyState`（带「导入本地音乐」按钮）；
-   * 3. `listInfo` 无值 → 曲库还没 inited 时提示载入中，否则提示未选歌单并给一个入口。
-   *
-   * 注意第 3 种通常是**瞬态**：`porting/js/entries/main.ts` 补了 `getUserLists()` 之后，
-   * `$effect` 会 `replace('/library?id=…')` 把 `$query.id` 补上。之所以仍然保留这一支，
-   * 是为了在任何时序意外下都不出现"纯白"。
+   * 因此第二个 `$effect` 不再做“无 id 就跳上次选择”的兜底；只有 id 失效时才 replace 回一级。
    *
    * 导入路径说明：本文件不在 `view-main/src` 下，所以 `@/` 会先查 `host/`、再查
    * `web-server/src`，最后才到 `view-main/src`。为了不撞名，这里统一用 `@ui/`（显式指向
    * `source/packages/view-main/src`），与 O-1 的写法保持一致。
    */
   import MusicList from '@ui/components/common/MusicList/MusicList.svelte'
+  import MobileLibraryLists from '@porting/ui/pages/MobileLibraryLists.svelte'
   import MobileEmptyState from '@porting/ui/pages/MobileEmptyState.svelte'
   import { query, replace } from '@ui/plugins/routes'
   import { getListMusics } from '@ui/modules/musicLibrary/actions'
@@ -42,13 +31,12 @@
     saveListScrollPosition,
     userListExist,
     sortListMusics,
-    getListPrevSelectId,
     saveListPrevSelectId,
   } from '@ui/modules/musicLibrary/store/actions'
   import { type ComponentExports, tick, untrack } from 'svelte'
-  import { LIST_IDS } from '@any-listen/common/constants'
   import { resourceList } from '@ui/modules/extension/reactive.svelte'
   import { LIST_PIC_ICON } from '@ui/shared/constants'
+  import { tm } from '@porting/ui/i18n'
 
   let list = $state.raw<AnyListen.Music.MusicInfo[]>([])
   let musicList = $state<ComponentExports<typeof MusicList> | null>(null)
@@ -175,18 +163,19 @@
   $effect(() => {
     const id = $query.id
     if (!$userListInited) return
+    if (!id) return
     if (id && $userListsAll.some((l) => l.id == id)) {
       void saveListPrevSelectId(id)
     } else {
-      void getListPrevSelectId().then((prevId) => {
-        void replace(`/library?id=${prevId || LIST_IDS.LOVE}`)
-      })
+      void replace('/library')
     }
   })
 </script>
 
 <div class="view-container container">
-  {#if listInfo}
+  {#if !$query.id}
+    <MobileLibraryLists />
+  {:else if listInfo}
     {#if list.length}
       <MusicList bind:this={musicList} listinfo={listInfo} {list} onscroll={handleScroll} />
     {:else}
@@ -194,14 +183,11 @@
     {/if}
   {:else if !$userListInited}
     <div class="fallback">
-      <p>正在载入曲库…</p>
+      <p>{tm('mobile__library_loading')}</p>
     </div>
   {:else}
     <div class="fallback">
-      <p>还没有打开任何歌单</p>
-      <button class="fallback-btn" type="button" onclick={() => void replace('/library', { id: LIST_IDS.LOVE })}>
-        打开「我喜欢」
-      </button>
+      <p>{tm('mobile__library_loading')}</p>
     </div>
   {/if}
 </div>
@@ -237,22 +223,6 @@
     }
   }
 
-  .fallback-btn {
-    min-width: 44px;
-    height: 44px;
-    margin-top: 16px;
-    padding: 0 20px;
-    font-size: 13px;
-    color: var(--color-primary);
-    cursor: pointer;
-    background: transparent;
-    border: 1px solid var(--color-primary);
-    border-radius: 22px;
-
-    &:active {
-      opacity: 0.6;
-    }
-  }
   // .list {
   //   flex: auto;
   // }

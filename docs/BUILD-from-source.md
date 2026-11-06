@@ -248,14 +248,17 @@ grep -rhoE "assets/emscripten-module-[A-Za-z0-9_-]+\.wasm" dist | sort -u
    ```powershell
    $qaStageName = 'qa-build-js-timeout-status-20261105'
    cd porting/js
-   node ./node_modules/vite/bin/vite.js build --outDir "../../artifacts/$qaStageName/spa"
-   node ./node_modules/vite/bin/vite.js build --config vite.extension-preload.config.mjs --outDir "../../artifacts/$qaStageName/extension-preload"
+   $qaStageRoot = Join-Path (Resolve-Path '../../artifacts').Path $qaStageName
+   node ./node_modules/vite/bin/vite.js build --outDir (Join-Path $qaStageRoot 'spa')
+   node ./node_modules/vite/bin/vite.js build --config vite.extension-preload.config.mjs --outDir (Join-Path $qaStageRoot 'extension-preload')
    node scripts/shrink-assets.mjs "--spa-dir=../../artifacts/$qaStageName/spa"
    node scripts/smoke.mjs "--dist=../../artifacts/$qaStageName"
    cd ../android
    .\gradlew.bat :app:assembleDebug -PskipWeb=true "-PjsDistDir=../../artifacts/$qaStageName" -PrequireWeb=true
    node scripts/check-webdist.mjs --assets "--dist=../../artifacts/$qaStageName"
    ```
+
+   两次 Vite 构建的 `root` 不同，`--outDir` 必须使用绝对路径，否则扩展预加载文件会写入上游源码树。
 
    当前包使用的目录是 `artifacts/qa-build-js-timeout-status-20261105`。指定 `jsDistDir` 时必须同时
    指定 `-PskipWeb=true`；默认不带 `--dist` 的检查仍然针对旧的 `porting/js/dist`。

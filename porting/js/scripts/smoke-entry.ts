@@ -37,6 +37,10 @@ import Store from '@porting/nodejs/Store'
 import { request } from '@porting/nodejs/request'
 import * as vmShim from '@porting/shims/vm'
 import { withIpcCallbacks } from '../ui/ipc/callback-client'
+import { openExtensionFileDialog, saveExtensionFileDialog } from '../ui/ipc/extensionFileDialogs'
+import { createIsolateFuncs } from '../host/app/modules/worker/extensionService/vm/hostContext/apis/isolateContext'
+import { contextState } from '../../../source/packages/shared/app/modules/worker/extensionService/vm/hostContext/state'
+import { createProxy, proxyServerState } from '@any-listen/app/modules/proxyServer'
 import {
   getConfig as getExtensionConfig,
   saveConfig as saveExtensionConfig,
@@ -201,12 +205,14 @@ function installFakeNativeBridge(): {
   holdNextRead: (count?: number) => void
   releaseHeldReads: () => number
   terminationAcks: Array<[string, string]>
+  proxyTargets: Map<string, { url: string; headers: Record<string, string> }>
 } {
   const files = new Map<string, Uint8Array>()
   const calls: string[] = []
   const lifecycleCallbacks = new Map<string, string[]>()
   const terminationAcks: Array<[string, string]> = []
   const httpAttempts = new Map<string, number>()
+  const proxyTargets = new Map<string, { url: string; headers: Record<string, string> }>()
   let holdNext = false
   let failNext = false
   let heldWrite: (() => void) | undefined
@@ -364,6 +370,14 @@ function installFakeNativeBridge(): {
         }
         return
       }
+      case 'http.registerProxyTarget':
+        proxyTargets.set(String(args[0]), { url: String(args[1]), headers: args[2] as Record<string, string> })
+        reply(null, null)
+        return
+      case 'http.unregisterProxyTarget':
+        proxyTargets.delete(String(args[0]))
+        reply(null, null)
+        return
       case 'fs.listTree': {
         // 契约：listTree(root, opts, onBatch) -> { total, canceled, id }
         const onBatch = callbackName(2)
@@ -387,7 +401,7 @@ function installFakeNativeBridge(): {
 
   setBridgeClient(client)
   return {
-    files, calls, client,
+    files, calls, client, proxyTargets,
     emitLifecycle(name, ...args) {
       for (const callback of lifecycleCallbacks.get(name) ?? []) {
         client.handleFrame(JSON.stringify([CALL_TYPE.CALLBACK_REQUEST, callback, args.map(encodeValue)]))
@@ -916,6 +930,31 @@ async function testExtensionVmJobs(): Promise<void> {
   try {
     vmShim.runInContext(`void Promise.resolve().then(() => hostCall(['ready']))`, ctx)
     assertEqual(messages, [['ready']], 'sandbox Promise jobs')
+    assertEqual(vmShim.runInContext(`Promise.resolve('done')`, ctx), { type: 'fulfilled', value: 'done' }, 'fulfilled Promise 返回值')
+    assertEqual(vmShim.runInContext(`new Promise(() => {})`, ctx), { type: 'pending' }, 'pending Promise 返回值')
+    assertEqual(vmShim.runInContext(`1 + 1`, ctx), 2, 'Promise 返回后上下文仍可用')
+  } finally {
+    vmShim.destroyContext(ctx)
+  }
+}
+
+export async function qaVmGrowth(): Promise<void> {
+  await vmShim.initVmShim()
+  const ctx = vmShim.createContext()
+  const state = (ctx as unknown as Record<symbol, { runtime: unknown }>)[Symbol.for('anylisten.vm.context')]
+  const runtime = state.runtime as { module: { HEAPU8: Uint8Array }; contextMap: Map<number, unknown> }
+  const beforeBytes = runtime.module.HEAPU8.buffer.byteLength
+  const contextsBefore = [...runtime.contextMap.keys()]
+  try {
+    vmShim.runInContext(`void Promise.resolve().then(() => {
+      globalThis.largeAllocation = new Uint8Array(32 * 1024 * 1024)
+      globalThis.largeAllocation.fill(1)
+    })`, ctx)
+    const afterBytes = runtime.module.HEAPU8.buffer.byteLength
+    assertTrue(afterBytes > beforeBytes, `job 必须触发 WASM 内存扩容: ${beforeBytes} → ${afterBytes}`)
+    assertEqual([...runtime.contextMap.keys()], contextsBefore, '内存扩容后不得新建 QuickJS context')
+    assertEqual(vmShim.runInContext('largeAllocation.length', ctx), 32 * 1024 * 1024, '扩容任务完成')
+    console.log(`[vm-growth] WASM heap ${beforeBytes} → ${afterBytes}; contexts ${contextsBefore.length} → ${runtime.contextMap.size}`)
   } finally {
     vmShim.destroyContext(ctx)
   }
@@ -937,6 +976,49 @@ async function testExtensionVmIsolateBridge(): Promise<void> {
     assertEqual(received, 'isolate message', 'isolated context 消息')
   } finally {
     vmShim.destroyContext(ctx)
+  }
+}
+
+async function testIsolateTimersAndCleanup(): Promise<void> {
+  await vmShim.initVmShim()
+  const id = 'qa-isolate-timers'
+  const received: string[] = []
+  const unsubscribers: Array<() => void> = []
+  contextState.vmContexts.set(id, {
+    unsubscribeEvents: unsubscribers,
+    preloadFuncs: { isolateContextMessage: async (_contextId: string, message: string) => {
+      received.push(JSON.parse(message) as string)
+    } },
+  } as unknown as (typeof contextState.vmContexts extends Map<string, infer T> ? T : never))
+  const api = createIsolateFuncs({ id, grant: ['isolate_context'] } as AnyListen.Extension.Extension)
+  try {
+    const ctx = await api.createIsolateContext()
+    await api.runInIsolateContext(ctx, `
+      const canceled = setTimeout(() => postMessage('canceled'), 5)
+      clearTimeout(canceled)
+      setTimeout(() => postMessage('ready'), 5)
+    `)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assertEqual(received, ['ready'], '隔离定时器触发和取消')
+    await api.destroyIsolateContext(ctx)
+    let rejected = false
+    try { await api.runInIsolateContext(ctx, '1') } catch { rejected = true }
+    assertTrue(rejected, '已销毁的隔离上下文不可继续使用')
+
+    const contexts: string[] = []
+    for (let index = 0; index < 5; index++) contexts.push(await api.createIsolateContext())
+    rejected = false
+    try { await api.createIsolateContext() } catch { rejected = true }
+    assertTrue(rejected, '每个扩展的隔离上下文上限为 5')
+    for (const context of contexts) await api.destroyIsolateContext(context)
+    const reusable = await api.createIsolateContext()
+    await api.runInIsolateContext(reusable, `setTimeout(() => postMessage('after destroy'), 10)`)
+    await api.destroyIsolateContext(reusable)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assertEqual(received, ['ready'], '销毁后不得触发定时器')
+  } finally {
+    for (const unsubscribe of unsubscribers) unsubscribe()
+    contextState.vmContexts.delete(id)
   }
 }
 
@@ -979,6 +1061,40 @@ async function testUiIpcCallbacks(): Promise<void> {
   }
 }
 
+async function testExtensionFileDialogs(): Promise<void> {
+  let openOptions: AnyListen.OpenDialogOptions | undefined
+  const selected = await openExtensionFileDialog('音源扩展', {
+    title: '选择音源', defaultPath: '/sources', openLabel: '导入',
+    canSelectMany: true, filters: { JavaScript: ['js'] },
+  }, async (options) => {
+    openOptions = options
+    return { canceled: false, filePaths: ['/sources/a.js', '/sources/b.js'] }
+  })
+  assertEqual(selected, ['/sources/a.js', '/sources/b.js'], '多选结果')
+  assertEqual(openOptions, {
+    modalTitle: '音源扩展', title: '选择音源', defaultPath: '/sources',
+    filters: [{ name: 'JavaScript', extensions: ['js'] }],
+    properties: ['openFile', 'multiSelections'], buttonLabel: '导入',
+  }, '文件选择参数')
+  const canceled = await openExtensionFileDialog('', {
+    title: '选择目录', canSelectFiles: false, canSelectFolders: true,
+  }, async (options) => {
+    assertEqual(options.properties, ['openDirectory'], '目录选择参数')
+    return { canceled: true, filePaths: ['/must-not-return'] }
+  })
+  assertEqual(canceled, [], '取消时不得返回路径')
+  const saved = await saveExtensionFileDialog('音源扩展', {
+    title: '导出音源', canSelectFolder: true, saveLabel: '导出',
+  }, async (options) => {
+    assertTrue(options.selectFolder === true && options.buttonLabel === '导出', '保存目录参数')
+    return { canceled: false, filePath: '/export' }
+  })
+  assertEqual(saved, '/export', '保存目录')
+  assertEqual(await saveExtensionFileDialog('', { title: '取消' }, async () => ({
+    canceled: true, filePath: '/must-not-return',
+  })), '', '取消保存时不得返回路径')
+}
+
 async function testHttpResponseCompatibility(native: ReturnType<typeof installFakeNativeBridge>): Promise<void> {
   const text = await request<string>('https://example.test/dav', { method: 'PROPFIND' })
   assertEqual(text.headers['content-type'], 'application/xml', '响应头名称归一化')
@@ -998,6 +1114,22 @@ async function testHttpResponseCompatibility(native: ReturnType<typeof installFa
     3,
     '503 应重试两次',
   )
+}
+
+async function testProxyRegistration(native: ReturnType<typeof installFakeNativeBridge>): Promise<void> {
+  proxyServerState.proxyBaseUrl = '/api/p_static'
+  const path = await createProxy('https://example.test/song.mp3', {
+    headers: { Authorization: 'test-header', Accept: ['audio/mpeg', 'audio/*'] },
+    query: { key: 'hello world' },
+  })
+  assertTrue(path.startsWith('al-ps-host:/api/p_static/'), '代理地址保留上游虚拟路径')
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  assertEqual(native.proxyTargets.get(name), {
+    url: 'https://example.test/song.mp3?key=hello+world',
+    headers: { Authorization: 'test-header', Accept: 'audio/mpeg, audio/*' },
+  }, '原生代理登记地址、查询参数和请求头')
+  await ports.http.unregisterProxyTarget(name)
+  assertTrue(!native.proxyTargets.has(name), '原生代理登记可移除')
 }
 
 async function testSyncConflictMerge(native: { files: Map<string, Uint8Array> }): Promise<void> {
@@ -1087,15 +1219,19 @@ export async function runSmoke(): Promise<{ results: SmokeResult[]; nativeCalls:
   check('SQL 参数归一化（同名命名参数去重）', testSqlParams)
   check('歌词制作信息过滤', testLyricMetadataFilter)
   check('设置备份导出与恢复筛选', testSettingsBackup)
+  await checkAsync('扩展沙箱任务内存扩容与销毁', qaVmGrowth)
   await checkAsync('扩展沙箱双向消息', testExtensionVmMessages)
   await checkAsync('扩展沙箱 Promise 回调', testExtensionVmJobs)
   await checkAsync('扩展隔离上下文桥接', testExtensionVmIsolateBridge)
+  await checkAsync('隔离上下文定时器、上限与释放', testIsolateTimersAndCleanup)
   await checkAsync('备份、同步与目录扫描回调桥接', testUiIpcCallbacks)
+  await checkAsync('扩展文件对话框多选、目录与取消', testExtensionFileDialogs)
 
   const native = installFakeNativeBridge()
   await checkAsync('SQLite 后台立即落盘及并发写入', () => testSqliteLifecycle(native))
   await checkAsync('同步冲突与快照合并', () => testSyncConflictMerge(native))
   await checkAsync('HTTP 响应头、原始字节与 503 重试', () => testHttpResponseCompatibility(native))
+  await checkAsync('扩展音频代理登记与请求参数', () => testProxyRegistration(native))
   await checkAsync('Store + SafeFS（经 Ports RPC 落盘）', () => testStore(native))
   await checkAsync('设置并发写入和退出等待', () => testConcurrentSafeFs(native))
   await checkAsync('SafeFS 并发预载、慢读与卸载重装', () => testSafeFsPreloadRace(native))

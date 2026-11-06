@@ -15,15 +15,16 @@
  *
  * ## 第 3 节（我们的 BottomSheet 化）为什么会加剧它
  *
- * `ui/mobile.less` §3 把 `.menu`/`.popup` 改成底部抽屉，并给它们加了一条全屏 scrim：
+ * `ui/mobile.less` §3 把 `.menu`/`.popup` 改成底部抽屉，并在 `#root` 上挂全屏 scrim：
  *
- *   html.mobile .popup::before { position: fixed; inset: 0; z-index: -1; background: rgb(0 0 0/40%) }
- *   html.mobile .popup { pointer-events: auto !important }
+ *   #root:has(> .popup:not([inert]))::before {
+ *     position: fixed; inset: 0; z-index: 119; background: rgb(0 0 0/40%);
+ *   }
+ *   .popup { z-index: 120 }
  *
- * 伪元素的**命中目标就是宿主元素**，所以整个视口都被算成"点在 `.popup` 上" ——
- * 点空白处、点触发器、点播放键，`event.target` 全是 `DIV.popup`，触发器根本收不到 click。
- * 也就是说"点外部关闭"这条普通方案在这个结构下**不成立**，必须按**几何位置**判定，
- * 而不是按 `event.target` 判定。
+ * scrim 的命中目标恒为 `#root`，并且会吞掉背后的按钮点击。因此"点外部关闭"
+ * 不能按 `event.target` 找触发器；这里仍按**几何位置**判定，并派发上游的
+ * `mouseleave` 关闭路径。
  *
  * ## 还有第二层：光派发 `mouseleave` 关不掉（实测踩到的坑）
  *
@@ -42,7 +43,7 @@
  *   `display:none / visibility:hidden`。**不要**用 `visible` 变量 —— 那是 Svelte 内部状态，
  *   这里拿不到；`.popup` 只在 `render` 为真时存在，隐藏后会被移除（有 160ms 过渡尾巴）。
  * - 内部可交互区：`.popup-content` 的 rect。**不能用 `.popup` 的 rect** —— 它被我们的样式
- *   改成了"底部整条 + 全屏 scrim"，用它判定等于永远"点在内部"。
+ *   改成了"底部整条"，用它判定会把下方不属于内容区的留白也算成"点在内部"。
  * - 关闭：对弹层元素 `dispatchEvent(new MouseEvent('mouseleave'))`，走上游自己的
  *   `onmouseleave` 处理器。**不删 DOM、不改 `visible` 绑定**——那是组件私有状态，
  *   外部硬改会让 `render`/`anim` 与真实状态不一致（正是"关一次就永久失效"的成因）。
@@ -233,8 +234,8 @@ function isInsideContent(el: HTMLElement, x: number, y: number): boolean {
 }
 
 const onPointerDown = (event: PointerEvent) => {
-  // 注意：`event.target` 在这里**没有判定价值** —— 全屏 scrim 是宿主的伪元素，
-  // 命中目标恒为 `DIV.popup`。只能按坐标判。
+  // 注意：`event.target` 在这里**没有判定价值** —— 全屏 scrim 是 #root 的
+  // 条件伪元素，命中目标恒为 #root。只能按坐标判。
   const popup = findOpenPopup()
   if (!popup) return
   if (isInsideContent(popup, event.clientX, event.clientY)) return

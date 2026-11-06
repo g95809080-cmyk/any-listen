@@ -14,7 +14,7 @@
  * 3. **值编解码**：message2call 使用嵌套数组与对象，二进制使用 base64 保留类型。
  */
 
-import { getQuickJS, getQuickJSSync, type QuickJSRuntime, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
+import { DisposableResult, getQuickJS, getQuickJSSync, type QuickJSRuntime, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
 
 import { Buffer } from '@porting/shims/buffer'
 
@@ -160,6 +160,76 @@ function stateOf(context: VmContext): VmContextState {
   return state
 }
 
+// quickjs-emscripten 的 dump() 在处理 Promise 时会释放传入句柄。
+// 始终让它消费副本，调用者仍拥有原句柄，避免执行以 Promise 结尾的脚本时二次释放。
+function dumpHandle(context: QuickJSContext, handle: QuickJSHandle): unknown {
+  const copy = handle.dup()
+  try { return context.dump(copy) } finally { if (copy.alive) copy.dispose() }
+}
+
+// quickjs-emscripten 0.31.0 的 executePendingJobs 持有调用前创建的 TypedArray。
+// job 若触发 WASM heap growth，旧 ArrayBuffer 会被 detach，ctx 指针读成 undefined，
+// 进而误建一个无人释放的 context。调用后从当前 HEAPU8.buffer 重新创建视图。
+function fixPendingJobContextPointer(runtime: QuickJSRuntime): void {
+  const native = runtime as unknown as {
+    rt: { value: number }
+    module: { HEAPU8: Uint8Array }
+    contextMap: Map<number, QuickJSContext>
+    memory: { newMutablePointerArray(length: number): { value: { ptr: number }; dispose(): void } }
+    ffi: {
+      QTS_ExecutePendingJob(runtime: number, maxJobs: number, contextOut: number): number
+      QTS_FreeValuePointerRuntime(runtime: number, value: number): void
+    }
+  }
+  runtime.executePendingJobs = (maxJobs = -1) => {
+    const out = native.memory.newMutablePointerArray(1)
+    let valuePtr: number | undefined
+    let contextPtr: number
+    try {
+      try {
+        const outPtr = out.value.ptr
+        valuePtr = native.ffi.QTS_ExecutePendingJob(native.rt.value, maxJobs ?? -1, outPtr)
+        contextPtr = new Uint32Array(native.module.HEAPU8.buffer, outPtr, 1)[0]
+      } finally {
+        out.dispose()
+      }
+    } catch (error) {
+      if (valuePtr !== undefined) native.ffi.QTS_FreeValuePointerRuntime(native.rt.value, valuePtr)
+      throw error
+    }
+    if (contextPtr === 0) {
+      native.ffi.QTS_FreeValuePointerRuntime(native.rt.value, valuePtr)
+      return DisposableResult.success(0)
+    }
+    const context = native.contextMap.get(contextPtr)
+    if (!context) {
+      native.ffi.QTS_FreeValuePointerRuntime(native.rt.value, valuePtr)
+      throw new Error(`vm: unknown pending job context ${contextPtr}`)
+    }
+    let result: QuickJSHandle
+    try {
+      result = (context as unknown as {
+        getMemory(runtime: number): { heapValueHandle(value: number): QuickJSHandle }
+      }).getMemory(native.rt.value).heapValueHandle(valuePtr)
+    } catch (error) {
+      native.ffi.QTS_FreeValuePointerRuntime(native.rt.value, valuePtr)
+      throw error
+    }
+    try {
+      if (context.typeof(result) === 'number') {
+        const count = context.getNumber(result)
+        result.dispose()
+        return DisposableResult.success(count)
+      }
+      const error = Object.assign(result, { context })
+      return DisposableResult.fail(error, (status) => context.unwrapResult(status))
+    } catch (error) {
+      if (result.alive) result.dispose()
+      throw error
+    }
+  }
+}
+
 function drainPendingJobs(state: VmContextState): void {
   if (state.disposed || state.drainingJobs || state.executionDepth > 0) return
   state.drainingJobs = true
@@ -168,7 +238,7 @@ function drainPendingJobs(state: VmContextState): void {
   try {
     const result = state.runtime.executePendingJobs(1_000)
     if (result.error) {
-      const error = state.context.dump(result.error)
+      const error = dumpHandle(state.context, result.error)
       result.error.dispose()
       throw new Error(`vm: pending job failed: ${JSON.stringify(error)}`)
     }
@@ -200,11 +270,11 @@ function handleToJs(state: VmContextState, handle: QuickJSHandle): unknown {
   const result = context.callFunction(state.toHost, context.undefined, [handle])
   if (!('value' in result)) {
     const err = result.error
-    const message = context.dump(err)
+    const message = dumpHandle(context, err)
     err.dispose()
     throw new Error(`vm: marshal failed: ${JSON.stringify(message)}`)
   }
-  const dumped = context.dump(result.value) as [string, unknown]
+  const dumped = dumpHandle(context, result.value) as [string, unknown]
   result.value.dispose()
   const [tag, payload] = dumped
   switch (tag) {
@@ -266,7 +336,7 @@ function primitiveToSandbox(state: VmContextState, value: unknown): QuickJSHandl
   for (const arg of args) arg.dispose()
   if (!('value' in result)) {
     const err = result.error
-    const message = context.dump(err)
+    const message = dumpHandle(context, err)
     err.dispose()
     throw new Error(`vm: unmarshal failed: ${JSON.stringify(message)}`)
   }
@@ -294,7 +364,7 @@ function callSandbox(state: VmContextState, fn: QuickJSHandle, receiver: QuickJS
     for (const arg of args) handles.push(primitiveToSandbox(state, arg))
     const result = state.context.callFunction(fn, receiver, handles)
     if (!('value' in result)) {
-      const message = state.context.dump(result.error)
+      const message = dumpHandle(state.context, result.error)
       result.error.dispose()
       throw new Error(`vm: ${name}() failed: ${JSON.stringify(message)}`)
     }
@@ -331,6 +401,7 @@ export function createContext(sandbox: Record<string, unknown> = {}, options: Cr
   }
   const QuickJS = getQuickJSSync()
   const runtime = QuickJS.newRuntime()
+  fixPendingJobContextPointer(runtime)
   runtime.setMemoryLimit(64 * 1024 * 1024)
   runtime.setMaxStackSize(1024 * 1024)
   const context = runtime.newContext()
@@ -399,7 +470,7 @@ export function createContext(sandbox: Record<string, unknown> = {}, options: Cr
         }
         const handle = state.context.getProp(state.context.global, prop)
         const type = state.context.typeof(handle)
-        if (type === 'object' && state.context.dump(handle) !== null) {
+        if (type === 'object' && dumpHandle(state.context, handle) !== null) {
           const names = state.context.unwrapResult(state.context.getOwnPropertyNames(handle))
           const hasMethods = names.some((key) => {
             const child = state.context.getProp(handle, key)
@@ -437,7 +508,7 @@ export function runInContext(code: string, context: VmContext, options: RunInCon
   try {
     const result = state.context.evalCode(code, options.filename ?? 'eval.js')
     if (result.error) {
-      const dumped = state.context.dump(result.error) as { message?: string; stack?: string; name?: string } | string
+      const dumped = dumpHandle(state.context, result.error) as { message?: string; stack?: string; name?: string } | string
       result.error.dispose()
       const message = typeof dumped === 'string' ? dumped : (dumped.message ?? 'quickjs error')
       const error = new Error(message)
@@ -445,7 +516,7 @@ export function runInContext(code: string, context: VmContext, options: RunInCon
       if (typeof dumped !== 'string' && dumped.stack) error.stack = dumped.stack
       throw error
     }
-    const value = state.context.dump(result.value)
+    const value = dumpHandle(state.context, result.value)
     result.value.dispose()
     return value
   } finally {

@@ -87,6 +87,10 @@ const OVERRIDES = {
     'host/app/modules/worker/extensionService/shared/configStore.ts',
   'shared/app/modules/worker/extensionService/shared/index':
     'host/app/modules/worker/extensionService/shared/index.ts',
+  'shared/app/modules/worker/extensionService/vm/hostContext/apis/isolateContext':
+    'host/app/modules/worker/extensionService/vm/hostContext/apis/isolateContext.ts',
+  'shared/app/modules/worker/extensionService/vm/hostContext/index':
+    'host/app/modules/worker/extensionService/vm/hostContext/index.ts',
   // —— view-main UI（Phase 5 触控改造）——
   // 只覆盖"结构必须变"的组件；样式类调整全部走 ui/mobile.less，不动上游文件
   // O-1：曲库歌曲列表（行高 72dp + 多选操作条）。其余覆盖项（ListItem / LyricPlayer /
@@ -131,6 +135,26 @@ const OVERRIDES = {
   // A-32：上游把“设置”勾选框写死为 disabled，覆写只恢复选择与回调。
   'view-main/src/views/Setting/AppSetting/Backup/typeSelectModal/App.svelte':
     'ui/overrides/views/Setting/AppSetting/Backup/typeSelectModal/App.svelte',
+  // 设置页改为移动端两级结构：`/settings` 是分组首页，`?section=…` 进入详情。
+  // 旧的 `?type=app&id=…` 仍由覆写内的路由归一化兼容。
+  'view-main/src/views/Setting/index.svelte': 'ui/overrides/views/Setting/index.svelte',
+  // 二级页没有左侧导航和重复标题，内容放进单列卡片。
+  'view-main/src/views/Setting/AppSetting/SettingView.svelte':
+    'ui/overrides/views/Setting/AppSetting/SettingView.svelte',
+  // 布尔设置改为整行可点 + 右侧开关；单选、输入、选择项改为手机纵向布局。
+  'view-main/src/views/Setting/AppSetting/SettingCommonItem.svelte':
+    'ui/overrides/views/Setting/AppSetting/SettingCommonItem.svelte',
+  // 扩展设置沿用上游数据流，补空态与新的 section 路由。
+  'view-main/src/views/Setting/ExtensionSetting/ExtensionSetting.svelte':
+    'ui/overrides/views/Setting/ExtensionSetting/ExtensionSetting.svelte',
+  // A-39（D-36）：Android 设置页过滤桌面专属项。
+  // 原表仍作为唯一数据源，覆写只删 section/item，配置 key 全部保留。
+  'view-main/src/views/Setting/AppSetting/settings':
+    'ui/overrides/views/Setting/AppSetting/settings.ts',
+  // 上游把代理开关与输入框锁在 `VITE_IS_DESKTOP` 后面；Android 宿主已经
+  // 在 Kotlin OkHttp 层实现了应用级代理，解除禁用即可生效。
+  'view-main/src/views/Setting/AppSetting/Network.svelte':
+    'ui/overrides/views/Setting/AppSetting/Network.svelte',
   // 部分音源把「作词/作曲/制作人」等制作人员表当作带时间戳的歌词行返回，
   // 播放详情页会把它们显示成歌词。初始化歌词时过滤这些元数据行，上游文件不动。
   'view-main/src/modules/lyric/init': 'ui/overrides/modules/lyric/init.ts',
@@ -167,6 +191,12 @@ const OVERRIDES = {
     'ui/overrides/components/material/fileExplorerModal/FileListModal.svelte',
   'view-main/src/components/material/fileExplorerModal/Save.svelte':
     'ui/overrides/components/material/fileExplorerModal/Save.svelte',
+  // D-34：PopupBtn 同时用 click 与 mouseenter/mouseleave 控制弹层。触屏在 click 后仍会
+  // 补发兼容 mouse 事件，合成 mouseleave 的 100ms 定时器会把刚打开的抽屉关掉
+  // （真机实测可见 551ms 出现、651ms 消失）。只在按钮上启用 fine-pointer hover；
+  // `Popup` 的 mouseleave 必须保留给 popupDismiss 的合成关闭路径。
+  'view-main/src/components/material/PopupBtn.svelte':
+    'ui/overrides/components/material/PopupBtn.svelte',
   // O-6：`@/shared/ipc/app` 的两个文件对话框。
   // 上游桌面走 `ipc.showOpenDialog`，Android host **没有也不需要**这个实现（原生 SAF 选择器
   // 拿到的 content:// URI 喂不进 `shims/fs`）；网页版走的是内置文件浏览器弹窗
@@ -178,6 +208,8 @@ const OVERRIDES = {
   // **不要翻转全局 VITE_IS_WEB**：它在 view-main/src 里有 37 处使用（App.svelte 根节点、
   // Header、Modal header、mediaSession 等），整体翻转会连带改掉壳层渲染。
   'view-main/src/shared/ipc/app/index': 'ui/overrides/shared/ipc/app/index.ts',
+  // 扩展自己的打开/保存对话框走另一条 IPC 路径，也需要接入 Android 文件浏览器。
+  'view-main/src/shared/ipc/app/remote': 'ui/overrides/shared/ipc/app/remote.ts',
   // —— web-server（AndroidShell 侧）——
   // 上游第 40 行 `readFile(joinPath(__dirname, 'extension-preload.js'))` 在 Worker 里是
   // `ReferenceError`，会让 core.worker 启动失败、UI 永久卡在 Loading。改成 fetch 静态资源。
@@ -192,6 +224,11 @@ const OVERRIDES = {
  */
 const PACKAGE_OVERRIDES = [
   {
+    // LX / WebDAV 的代理地址需要同步登记到 Kotlin 本地 HTTP 服务。
+    find: /^@any-listen\/app\/modules\/proxyServer$/,
+    replacement: 'host/app/modules/proxyServer/index.ts',
+  },
+  {
     // A-31：上游备份模块只导出/恢复歌单，设置项在 UI 与 importData 里都被禁用。
     // 覆写补齐设置快照与安全恢复；source/ 不动。
     find: /^@any-listen\/app\/modules\/backup$/,
@@ -205,13 +242,18 @@ const RAW_TARGETS = {
   // 扩展模块的 `export *` 出口：让 host/app/modules/extension 能"只用上游的转发层、
   // 只替换 initExtension/restartExtensionHost"，不必把 60 多个导出抄一遍（见该文件注释）
   '@porting-uplink/web-server/app/modules/extension': 'web-server/src/app/modules/extension/index',
+  '@porting-uplink/extension-host-context': 'shared/app/modules/worker/extensionService/vm/hostContext/index',
+  '@porting-uplink/proxy-server': 'shared/app/modules/proxyServer/index',
   // `@/shared/ipc/app` 的 `export *` 出口：让 `ui/overrides/shared/ipc/app/index.ts`
   // 只替换 showOpenDialog / showSaveDialog，其余转发函数全部沿用上游（同 extension 的作法）
   '@ui-raw/shared/ipc/app': 'view-main/src/shared/ipc/app/index',
+  '@ui-raw/shared/ipc/app/remote': 'view-main/src/shared/ipc/app/remote',
   '@ui-raw/components/material/fileExplorerModal/ListItem.svelte':
     'view-main/src/components/material/fileExplorerModal/ListItem.svelte',
   '@ui-raw/components/common/MusicList/List/action':
     'view-main/src/components/common/MusicList/List/action',
+  '@ui-raw/views/Setting/AppSetting/settings':
+    'view-main/src/views/Setting/AppSetting/settings',
 }
 
 /** Node 内建模块 → shims。键必须写全，不接受 `node:x/y` 前缀模糊匹配（会串味） */

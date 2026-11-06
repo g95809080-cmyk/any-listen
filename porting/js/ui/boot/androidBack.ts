@@ -71,12 +71,13 @@ const hashOf = () => window.location.hash || '#/'
 
 /** 弹层探测/关闭与 D-22 共用同一套判据（`findOpenPopup` / `dismissPopup`），避免两处漂移 */
 import { dismissModal, dismissPopup, findOpenModal, findOpenPopup } from './popupDismiss'
+import { isSettingsChildHash, isSettingsHomeHash } from '@porting/ui/settings/navigation'
 
 /** 栈上限：防止长时间使用无限增长（超出后丢最老的，语义上等价于"很早以前的页面回不去了"） */
 const MAX_DEPTH = 50
 
-/** 根级（Tab 顶层）路径。判定一律**先去查询串**：`#/settings?type=extension` 仍是根级。 */
-const ROOT_PATHS = ['/library', '/online', '/search', '/settings']
+/** 根级（Tab 顶层）路径。设置首页单独判断，二级设置页需要回首页。 */
+const ROOT_PATHS = ['/online', '/search']
 
 const pathOf = (hash: string) => {
   const raw = hash.startsWith('#') ? hash.slice(1) : hash
@@ -85,7 +86,29 @@ const pathOf = (hash: string) => {
   return path.length > 1 ? path.replace(/\/+$/, '') : path
 }
 
-const isRootHash = (hash: string) => ROOT_PATHS.includes(pathOf(hash))
+/**
+ * 曲库现在分两级：`/library` 是一级歌单列表，`/library?id=…` 是二级歌曲页。
+ * 旧实现把所有 `/library…` 都当根级，从二级页按 Android 返回会直接走「再按一次退出」。
+ */
+const hasLibraryListId = (hash: string) => {
+  const raw = hash.startsWith('#') ? hash.slice(1) : hash
+  const search = raw.split('?')[1] ?? ''
+  return new URLSearchParams(search).get('id') != null
+}
+
+const isRootHash = (hash: string) => {
+  const path = pathOf(hash)
+  if (path === '/library') return !hasLibraryListId(hash)
+  if (path === '/settings') return isSettingsHomeHash(hash)
+  return ROOT_PATHS.includes(path)
+}
+
+/** 深链直达子页时没有 hash 上一页，返回键仍应回到设置首页而不是退出 App。 */
+const fallbackHash = (hash: string): string | null => {
+  if (isSettingsChildHash(hash)) return '#/settings'
+  if (pathOf(hash) === '/extenstion') return '#/settings'
+  return null
+}
 
 /**
  * 播放详情的关闭键（见文件头「覆盖层」一节）。
@@ -125,7 +148,8 @@ const api = {
     findOpenPopup() != null ||
     findOpenModal() != null ||
     findPlayDetailCloseBtn() != null ||
-    stack.length > 1,
+    stack.length > 1 ||
+    fallbackHash(hashOf()) != null,
   /** 返回 false 表示"已到根，请按退出处理"；true 表示"我自己处理了" */
   goBack: () => {
     // 第 1 档：最上层弹层（倍速/音量/循环/播放列表…）。它是 Portal 到 #root 的浮层，
@@ -147,10 +171,17 @@ const api = {
       closeBtn.click()
       return true
     }
-    // 第 4 档：hash 记账栈
-    if (stack.length <= 1) return false
-    window.history.back()
-    return true
+    // 第 4 档：hash 记账栈；深链子页无栈可退时回到设置首页
+    if (stack.length > 1) {
+      window.history.back()
+      return true
+    }
+    const fallback = fallbackHash(hashOf())
+    if (fallback) {
+      window.location.hash = fallback
+      return true
+    }
+    return false
   },
   /** 调试用：原生/CDP 都能读，出问题时不必猜 */
   debug: () => ({

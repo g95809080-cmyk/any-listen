@@ -8,6 +8,10 @@ Any Listen for Android — 移植说明与许可声明
 1. 本仓库是什么
 ---------------
 
+`porting/extensions/lx-api-source-loader/` 另含基于 Any Listen LX API Source Loader
+0.1.7（commit 1d88ccad40e823e52e9255953a87939b9e0d4af3）的适配扩展；其上游
+Apache-2.0 许可证保留在该目录的 LICENSE，来源及修改说明见该目录 README。
+
 上游 Any Listen 的 **Android 移植**，属于上游作品的衍生作品（derivative work）。
 
 上游是一个桌面 / Web 服务端的本地音乐播放器（Electron + Koa + better-sqlite3）。

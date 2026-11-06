@@ -21,6 +21,31 @@ const dict = {
   mobile__tab_online: { 'zh-cn': '在线', 'zh-tw': '線上', 'en-us': 'Online' },
   mobile__tab_search: { 'zh-cn': '搜索', 'zh-tw': '搜尋', 'en-us': 'Search' },
   mobile__back: { 'zh-cn': '返回', 'zh-tw': '返回', 'en-us': 'Back' },
+  mobile__settings_group_playback: {
+    'zh-cn': '播放',
+    'zh-tw': '播放',
+    'en-us': 'Playback',
+  },
+  mobile__settings_group_data: {
+    'zh-cn': '在线与数据',
+    'zh-tw': '線上與資料',
+    'en-us': 'Online & data',
+  },
+  mobile__settings_group_extension: {
+    'zh-cn': '扩展',
+    'zh-tw': '擴充',
+    'en-us': 'Extensions',
+  },
+  mobile__settings_group_other: {
+    'zh-cn': '其他',
+    'zh-tw': '其他',
+    'en-us': 'More',
+  },
+  mobile__settings_extension: {
+    'zh-cn': '扩展设置',
+    'zh-tw': '擴充設定',
+    'en-us': 'Extension settings',
+  },
   mobile__open_player: { 'zh-cn': '打开播放页', 'zh-tw': '開啟播放頁', 'en-us': 'Open player' },
   mobile__search_placeholder: {
     'zh-cn': '搜索歌曲、歌手、歌单',
@@ -62,6 +87,18 @@ const dict = {
     'en-us': 'Import local music',
   },
   mobile__library_import: { 'zh-cn': '导入', 'zh-tw': '匯入', 'en-us': 'Import' },
+  mobile__library_my_lists: { 'zh-cn': '我的歌单', 'zh-tw': '我的歌單', 'en-us': 'My playlists' },
+  mobile__library_list_count: {
+    'zh-cn': '{num} 个歌单',
+    'zh-tw': '{num} 個歌單',
+    'en-us': '{num} playlists',
+  },
+  mobile__library_list_hint: {
+    'zh-cn': '收藏或导入的歌单会出现在这里',
+    'zh-tw': '收藏或匯入的歌單會出現在這裡',
+    'en-us': 'Playlists you save or import will appear here',
+  },
+  mobile__library_loading: { 'zh-cn': '正在载入曲库…', 'zh-tw': '正在載入曲庫…', 'en-us': 'Loading library…' },
   /**
    * 设置页顶栏的入口文案（D-12）。上游把扩展管理页 `#/extenstion` 的入口只挂在
    * `Aside/Nav.svelte` 与 `Header/ControlBtnsDesktop.svelte`（移动壳都不渲染）→
@@ -97,6 +134,16 @@ const dict = {
     'zh-cn': '在线音源响应超时，请检查网络后重试',
     'zh-tw': '線上音源回應逾時，請檢查網路後再試',
     'en-us': 'Online source timed out. Check your network and try again.',
+  },
+  mobile__extension_settings_empty_title: {
+    'zh-cn': '还没有可配置的扩展',
+    'zh-tw': '還沒有可設定的擴充',
+    'en-us': 'No extension settings yet',
+  },
+  mobile__extension_settings_empty_sub: {
+    'zh-cn': '安装并启用扩展后，它提供的设置项会出现在这里',
+    'zh-tw': '安裝並啟用擴充後，它提供的設定項目會出現在這裡',
+    'en-us': 'Install and enable an extension to see the settings it provides here.',
   },
   mobile__lyric_loading: {
     'zh-cn': '歌词加载中…',

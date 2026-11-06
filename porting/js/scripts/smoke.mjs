@@ -34,6 +34,16 @@ function assert(cond, name, detail) {
   else fail(name, detail)
 }
 
+function cssRuleHas(css, selector, declarations) {
+  const start = css.indexOf(selector)
+  if (start < 0) return false
+  const open = css.indexOf('{', start)
+  const close = css.indexOf('}', open)
+  if (open < 0 || close < 0) return false
+  const body = css.slice(open + 1, close)
+  return declarations.every((declaration) => body.includes(declaration))
+}
+
 /* ------------------------------------------------------------------ *
  * 1. 产物检查
  * ------------------------------------------------------------------ */
@@ -304,6 +314,72 @@ if (mainChunk) {
   assert(!mainSource.includes('__anylisten_mount_ui__'), 'UI 不再是占位页', '未找到 __anylisten_mount_ui__')
 }
 
+// ---- 移动端 UI 回归守卫 ------------------------------------------------------
+// 这些规则都是“看得见但普通类型检查抓不到”的修复：桌面定尺卡片、全局 BottomSheet
+// 误伤局部下拉、在线筛选区挤掉一级 Tab。断言编译后的 CSS，避免只改源码注释、
+// 或选择器被后续重构悄悄覆盖。
+const styleAssets = assets.filter((name) => /^style\..*\.css$/.test(name))
+assert(styleAssets.length === 1, '单一样式产物存在', styleAssets.length ? styleAssets.join(', ') : 'none')
+if (styleAssets.length === 1) {
+  const css = readFileSync(path.join(assetsDir, styleAssets[0]), 'utf8')
+  const cssGuards = [
+    [
+      '在线歌单页一级 Tab 与筛选区分行',
+      '.header:has(> #online-header-right > .online-songlist-header-right)',
+      ["grid-template-areas: 'types' 'filters'", 'grid-template-columns: minmax(0, 1fr)'],
+    ],
+    [
+      '在线歌单卡切换为单列信息卡',
+      '.songlist-list ul:has(.songlist-info)',
+      ['grid-template-columns: minmax(0, 1fr) !important'],
+    ],
+    [
+      '在线歌单卡取消桌面最小宽度',
+      '.songlist-list ul > li > a.list-item:has(.songlist-info)',
+      ['min-width: 0 !important', 'height: auto !important'],
+    ],
+    [
+      '在线歌单标签关闭态不渲染',
+      ".online-songlist-header-right .tag-list > .popup[aria-hidden='true']",
+      ['display: none !important'],
+    ],
+    [
+      '在线歌单标签打开态铺满抽屉',
+      ".online-songlist-header-right .tag-list > .popup[aria-hidden='false']",
+      ['display: flex !important'],
+    ],
+    [
+      '在线歌单标签恢复纵向换行',
+      '.header > #online-header-right .online-songlist-header-right .tag-list > .popup > .list',
+      ['display: block !important', 'overflow-x: hidden !important'],
+    ],
+  ]
+  for (const [label, selector, declarations] of cssGuards) {
+    assert(cssRuleHas(css, selector, declarations), `UI 守卫：${label}`, selector)
+  }
+}
+
+const settingsOverride = readFileSync(
+  path.join(ROOT, 'ui/overrides/views/Setting/AppSetting/settings.ts'),
+  'utf8',
+)
+assert(
+  settingsOverride.includes("new Set(['hotkey', 'update'])") &&
+    settingsOverride.includes('common.windowSizeId') &&
+    settingsOverride.includes('common.transparentWindow'),
+  'UI 守卫：桌面专属设置仍被过滤',
+  '快捷键/更新/窗口/透明窗口',
+)
+const networkOverride = readFileSync(
+  path.join(ROOT, 'ui/overrides/views/Setting/AppSetting/Network.svelte'),
+  'utf8',
+)
+assert(
+  !networkOverride.includes('disabled={!import.meta.env.VITE_IS_DESKTOP}'),
+  'UI 守卫：Android 网络代理不退回桌面禁用态',
+  '未找到桌面 disabled 条件',
+)
+
 // ---- 媒体资源必须被 shrink-assets 改过名 -------------------------------------
 // aapt2 对 .wav 不压缩（Stored），改名成 .wav.bin 才能被 deflate。
 // 漏做的话 APK 会静默大 4.8 MB，所以放在冒烟门禁里。
@@ -323,6 +399,12 @@ await build({ configFile: smokeConfig, logLevel: 'warn' })
 
 const smokeModuleUrl = new URL(`file://${path.join(ROOT, 'node_modules/.cache/anylisten-smoke/smoke.mjs').replace(/\\/g, '/')}`)
 const { runSmoke } = await import(smokeModuleUrl.href)
+if (process.env.QA_VM_GROWTH_ONLY) {
+  const { qaVmGrowth } = await import(smokeModuleUrl.href)
+  await qaVmGrowth()
+  console.log('vm growth probe completed')
+  process.exit(0)
+}
 const { results, nativeCalls } = await runSmoke()
 for (const item of results) {
   if (item.ok) pass(item.name, item.detail)

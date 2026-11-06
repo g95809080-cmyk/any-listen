@@ -1343,3 +1343,229 @@ A-23 / A-24 / A-34 把文件浏览器改成触屏语义：
 - 内置搜索结果没有可播放地址时，上游仍会先跑完两轮 30 秒取流超时：真机约 60 秒后才显示错误并自动跳到下一首。本轮保证失败可见，但没有提前短路，因为其他扩展的搜索回退仍可能在同一请求内返回有效 URL。
 
 未完成项不变：在线专辑/歌手搜索缺少扩展能力、宿主 IPC 和页面实现；下载被上游关闭；评论只读；Android 10–15、横屏、平板/折叠屏和外接指针未覆盖。第三方音源自身的 400/503、空结果和长期不可用无法由应用保证。
+
+---
+
+## 25. LX Music 自定义源与模拟器、真机验收（2026-11-06）
+
+批量导入、覆盖更新和代表源播放使用本机 API 36 / x86_64 只读模拟器（412×约 914 CSS，静音输出）。最终 Debug APK 为 `porting/android/app/build/outputs/apk/debug/app-debug.apk`，19,929,984 B，构建时间 2026-11-06 09:05:00，SHA-256 `987AEFC7B876947D027C556BB6D3810C3CF8EC1D34ACE28A348EB825FF72E9EF`，入口 `main.sUfsCr2d.js`。该包随后覆盖安装到 Xiaomi 2211133C / Android 16 真机；设备内 `base.apk` 与本地 SHA-256 一致。此前的 release 包未重建，不含本轮 LX 功能。
+
+适配版扩展基于官方 LX API Source Loader 0.1.7 的提交 `1d88ccad40e823e52e9255953a87939b9e0d4af3`，保留 Apache-2.0 许可证。源码在 `porting/extensions/lx-api-source-loader/`；本地安装包在 `artifacts/lx-loader/lx-api-source-loader-android_0.1.7-android.1.alix`，194,418 B，SHA-256 `00E3610CB8CD07B03926E22B467F40B610E627FE25A58DEDD5608D54665817CF`。适配版使用独立扩展 ID，与官方扩展并存，数据各自保存；如需迁移已有官方扩展的源，可先导出再导入。
+
+### 25.1 文件导入和数据保留
+
+- 修复 Android 扩展的打开、保存文件对话框，支持选择文件、多选、过滤器和目录。用户提供的两个目录共 24 个 `.js` 文件均可导入；测试另放入一个人工构造的无头文件，首次结果为 24 成功、0 重复、1 失败。失败项不属于用户提供的 24 个源。
+- 再次全选时结果为 0 成功、24 重复、1 失败；按内容 MD5 去重，已保存数量仍为 24。结果页支持滚动查看原因和继续选择其他目录；移动端操作按钮可换行，结果页底部操作避开系统导航栏。结果截图见 `artifacts/qa-lx-custom-import-summary.png`，设置页和长结果页截图记录见 `artifacts/qa-lx-final-settings.png`、`artifacts/qa-lx-final-summary-scrolled.png`（后两图来自修复内存扩容问题之前的候选包，界面代码相同）。
+- 模拟器实际导出 24 个源，导出内容与用户原文件按 SHA-256 多重集合逐项一致；扩展同 ID 更新和应用更新、重启后，导入列表与启用状态均保留。验证使用复制到模拟器的文件，未修改用户原始目录。
+- 修复后在最终 APK 上连续执行 10 轮同 ID 扩展覆盖更新与重复导入：每轮均为 24 个重复、1 个合成无效文件失败，更新成功，仍保留 24 个源并启用 `gdstudio音乐源`；单轮耗时 47.2–50.1 秒，无 QuickJS 断言或崩溃。结果记录在 `artifacts/qa-lx-repeat-result.txt`。
+- 真实源 `gdstudio音乐源`、`fish_music` 和 `Hei Music聚合源` 均分别初始化成功，并验证了启用、停用与重新启用。默认同时启用上限仍为 3；宿主 5 个隔离上下文的上限和释放只通过合成冒烟测试，不代表 5 个真实源的长期性能已验收。
+
+### 25.2 播放和运行环境
+
+上游扩展返回的 `/api/p_static/...` 虚拟地址原先只登记在 JS，Android 本地服务读不到，因此取流 404。现将地址、查询参数与请求头同步到 Android 服务；最终包上带范围请求的音频响应返回 206，`Content-Range: bytes 0-4729251/4729252`。使用 `Online Metadata 0.4.8` 搜索网易 `hello`，以已导入的 `gdstudio音乐源` 播放 `Hello - Adele`，WebView 音频时长 295.549 秒、`readyState=4`；最终复验中播放进度从 3.414 秒增长到 14.388 秒，暂停、续播和拖动至约 182 秒此前均已验证。最终截图见 `artifacts/qa-final-player-playing.png`；模拟器静音，不代表实体设备声音质量。
+
+此前复测发现，批量导入后覆盖安装扩展可能触发 QuickJS `JS_FreeRuntime` 断言。定位为 `quickjs-emscripten` 0.31.0 的任务执行过程中发生 WASM 内存扩容：库仍从旧 `ArrayBuffer` 的视图读取上下文指针，导致误建一个未释放的上下文。`porting/js/shims/vm.ts` 现于任务执行后从当前 `HEAPU8.buffer` 读取指针，并保留结果与错误的释放语义。真实 QuickJS 回归在未修复时复现 1→2 个上下文及释放断言；修复后任务内分配使 WASM heap 从 16,777,216 增至 38,993,920 B，上下文保持 1→1，任务执行与销毁成功。独立复现命令：
+
+```powershell
+cd porting/js
+$env:QA_VM_GROWTH_ONLY='1'
+node scripts/smoke.mjs --dist=../../artifacts/qa-build-lx-fixed-20261106
+Remove-Item Env:QA_VM_GROWTH_ONLY
+```
+
+### 25.3 HTTP 范围
+
+全局明文仍关闭。除 §24 的 34 个精确主机外，本轮针对用户源静态出现的 10 个 HTTP 主机及运行时观察到的 1 个主机单独放行，均不包含子域名：
+
+| 主机 | 来源 |
+|---|---|
+| `103.79.184.97` | HelloWorld、墨澜 |
+| `106.55.0.102` | 墨澜 |
+| `175.27.166.236` | 全豆要、西瓜聚合、非常刀、墨澜 |
+| `anymatch.kuwo.cn`、`gc.kxwa.top`、`m.kuwo.cn`、`mobi.kuwo.cn` | 星海 |
+| `api.vsaa.cn` | 全豆要、西瓜聚合 |
+| `music.nxinxz.com` | 全豆要、西瓜聚合、非常刀 |
+| `nmobi.kuwo.cn` | 轻量、HelloWorld、安妮、星海、裤佬 |
+| `8.137.89.103` | 运行时更新检查发现，具体脚本未确认 |
+
+模拟器通过 Android 桥验证：`http://m.kuwo.cn/` 和 `http://8.137.89.103:10004/` 返回 200，未列入的 `http://example.com/` 按网络策略被拒绝。静态扫描不能枚举脚本运行时生成的所有地址；音源更新后应重新核对所需主机。
+
+### 25.4 构建检查与真机复验
+
+- 移植层 `pnpm run typecheck` 通过，strict 0 错误；上游另有 394 条诊断按项目既定规则不计入该门禁，不能据此称上游类型检查通过。
+- 使用独立输出目录分别构建 SPA 与 extension-preload，再执行 `shrink-assets` 和 `smoke.mjs`，均通过；从 `X:\porting\android`（`subst X:` 映射到项目根）执行 `clean :app:assembleDebug -PskipWeb=true -PrequireWeb=true` 成功；`check-webdist.mjs --assets` 为 `VERDICT: OK`，三个关键指纹一致。扩展自身的 `pnpm typecheck`、`pnpm test` 和 `pnpm build` 通过。
+- `bridge` 与 `core-ports` 的 Debug 单元测试均实际执行并通过。中文路径在默认 UTF-8 下会因 Gradle 测试 worker classpath 编码报 `ClassNotFoundException`；使用 `JAVA_TOOL_OPTIONS=-Dfile.encoding=GBK`（日志 `artifacts/gradle-unit-test-gbk.log`）或在 ASCII `X:` 路径下执行 UTF-8（日志 `artifacts/gradle-unit-test-subst.log`）均可通过。该问题属于本机构建路径编码，不是应用运行时缺陷。
+- 真机安装最终 APK 后主界面正常，原曲库与设置数据保留，crash 缓冲区无记录；截图 `artifacts/qa-real-device-final.png`。通过「扩展管理 → 本地安装」导入最终 `.alix` 后，列表显示独立的 `LX Music API Source Loader (Android) v0.1.7-android.1`，与已有官方 `v0.1.7` 并存，加载耗时 18 ms，截图 `artifacts/qa-real-extension-installed.png`。
+
+### 25.5 边界
+
+- `source/` 保持干净。当前未逐一验证 24 个第三方源的播放能力；真机本轮只确认 APK 与适配扩展的安装加载，未重复导入 24 个源。LX 扩展中的歌曲缓存开关尚未接通 Android 代理，当前不要依赖它；此前旧版本的长时息屏结果不等于当前包已经完成相同长测。
+
+---
+
+## 26. 移动端视觉与弹层收口（2026-11-06）
+
+本轮只修改移植层的 Svelte/TypeScript/Less，不改 `source/`。最终 Debug APK 为 `porting/android/app/build/outputs/apk/debug/app-debug.apk`，20,351,806 B，构建时间 2026-11-06 12:28:34 +08:00，SHA-256 `010C47BE47B16FB258725673046D5E2CEC91DED89A285EAF0B4D87B9443A6A65`，入口 `main.k6Eq_-YZ.js`、样式 `style.BuhRQck2.css`。APK 已覆盖安装到 API 36 / x86_64 模拟器和 Xiaomi 2211133C / Android 16 真机；两台设备内 `base.apk` 的大小与 SHA-256 均与本地一致（20,351,806 B）。
+
+### 26.1 已修复的视觉问题
+
+- **在线来源条窄屏裁切**：392dp 下 5 个内置来源原先需要约 386dp，可视区仅 369dp，“咪咕音乐”右侧被切。外边距由 12dp 收到 8dp、来源项横向 padding 由 12dp 收到 10dp 后，列表矩形为 `x=8 / width=376 / right=384`，`clientWidth=scrollWidth=376`；5 项最右边界为 346.99，全部落在视口内，更多来源仍可横滑。证据见 `artifacts/qa-final-online-392.png`。
+- **弹窗/抽屉堆叠**：全屏遮罩从 `.menu/.popup` 的伪元素移到 `#root` 的条件伪元素，z-index 119；抽屉本体统一 z-index 120。Dropdown 嵌在 popup 内时回到内容流，不再单独 fixed 后叠成第二层。More 菜单现在是单层 44dp 抽屉，点遮罩关闭，不会再误触背景按钮。模拟器证据见 `artifacts/qa-final-more.png`、`artifacts/qa-final-more-closed.png`。
+- **真机 More 触摸自关闭（D-34）**：手指点 More 后菜单约 100ms 就自己消失，而 DOM `button.click()` 能保持打开。根因是 `PopupBtn.svelte` 把触屏在 click 后补发的兼容 `mouseenter/mouseleave` 当成桌面 hover：`mouseleave` 的 100ms 定时器把刚打开的抽屉置为 `visible=false`；`PopupDismiss` 不是本次关闭来源。新增 `ui/overrides/components/material/PopupBtn.svelte`，仅对按钮 hover 加 `(hover: hover) and (pointer: fine)` 门禁；弹层自身的 `mouseleave` 保留，供遮罩关闭派发。修复后真机触摸 `(261.8,256.5)`，等待 1.2s 抽屉仍为 `popup active`、`inert=false`、`392.7×72`；截图 `artifacts/qa-device-more-39405.png`。
+- **文件选择器被 AppBar 截断**：文件列表弹窗改为底部对齐，顶部预留 `safe-top + 64px`，标题、路径栏与底部操作键均完整可见；列表容器的原生黑色焦点框已移除，底部按钮避开系统导航栏。证据见 `artifacts/qa-final-filepicker.png`。
+- **自定义源行内错位**：复选框区域改为吃掉剩余宽度，`Remove` 固定为 44dp 并统一贴右。模拟器扫描 24 个源的列表项均无横向溢出，名称、说明和操作键不重叠；真机当前载入 9 个源，9 行实测 `Remove` 均为 `58×44`，右边界全部为 `376.7`，未超过 `innerWidth=392`。证据见 `artifacts/qa-final-lx-sources.png`、`artifacts/qa-final-lx-bottom.png`。
+- **播放详情可读性**：未播放歌词的 `font-mode` 子 `span` 使用 `--color-650`，蓝色扫词渐变仍保留；辅控按钮取消双重淡化，图标在浅/深主题下均可辨识。证据见 `artifacts/qa-final-playdetail.png`。
+- **动态分隔线与新标签容器**：顶部在线资源的标签动作区仅在确有内容时显示左侧分隔线，不再出现空容器悬空的竖线。
+- **状态栏图标**：WebView 内容颜色随主题同步；深色主题状态栏图标为白色，切回浅色主题后恢复深色图标。证据见 `artifacts/qa-final-dark-theme.png`、`artifacts/qa-final-restored-light.png`。
+
+### 26.2 复验结果
+
+- **真机 392×872 / dpr 2.75**：在线来源条列表 `x=8 / width=376.73 / right=384.73`，`clientWidth=377=scrollWidth`，5 个内置来源最右边界为 `373.85`，页面无横向溢出；截图 `artifacts/qa-device-online-39405.png`。
+- 同一真机上打开备份保存对话框：弹窗内容从 `y=108` 铺到 `872.7`，标题「选择保存位置」完整，取消/确定底边为 `864.7`，为系统手势区保留 8px；列表焦点框为 `none`。截图 `artifacts/qa-device-filepicker-39405.png`。
+- More 抽屉实测为 `392.7×72`（内容区 `56dp`），菜单项完整一行，抽屉 `z=120`，`#root::before` 遮罩 `z=119`。用 CDP `Input.dispatchTouchEvent` 真实触摸 More：点击前 `.popup` 为 0；触摸后 1.2s 仍有 1 个打开态弹层，class 为 `popup active`、`inert=false`、`opacity=1`，文本为「收藏为普通列表」，此时 `matchMedia('(hover: hover) and (pointer: fine)')` 为 false。再触摸 `(20,100)` 后弹层数为 0，路由仍为 `#/online/topSongs?id=8888&sid=online-metadata_kg`，多选状态 `selected=0`、当前曲 `Bleed 2 Feed - CC Adcock` 均未变。另触摸播放详情倍速按钮 `(196.4,770.7)`，1.2s 后弹层仍打开（文本 `1.00x | 音调补偿`），点遮罩后关闭，证明不是 More 的单点特判。证据见 `artifacts/qa-device-more-39405.png`、`artifacts/qa-device-rate-39405.png`。
+- 深色主题「黑灯瞎火」下状态栏图标为白色；恢复原主题「清热版蓝」后恢复深色。截图 `artifacts/qa-device-dark-39405.png`、`artifacts/qa-device-restored-light-39405.png`。
+- 覆盖检查了设置页、在线榜单、播放详情、More 菜单、备份类型弹窗、文件保存弹窗、LX 自定义源列表、扩展设置与深/浅主题切换；未发现新的字符互相压盖、操作键被截断或弹层嵌套叠影。复验结束后模拟器已清除 CDP 视口覆盖并恢复 412×915。
+- 设置页与扩展设置页顶部的二级 Tab 仍为横向滚动列表，窄屏会露出下一项的局部作为滚动暗示；这是可滑动容器，不属于内容重叠。
+
+### 26.3 门禁、真机边界
+
+- `pnpm typecheck`：移植层 strict 通过，0 错误；`pnpm build:all` 通过；`pnpm smoke` 通过；`gradlew :app:assembleDebug -PrequireWeb=true` 为 `BUILD SUCCESSFUL`。
+- 从 `porting/android` 执行两次 `check-webdist.mjs`（默认与 `--assets`）均为 `VERDICT: OK`；`index.html`、`main.k6Eq_-YZ.js`、extension-preload 三项指纹在 `dist` 与 APK assets 间全等。
+- 无线真机短暂离网后恢复为 `192.168.1.39:39405`。最终 APK 覆盖安装成功，`lastUpdateTime` 为 2026-11-06 12:28:43，设备内 `base.apk` 与本地 SHA-256 均为 `010C47BE47B16FB258725673046D5E2CEC91DED89A285EAF0B4D87B9443A6A65`；模拟器 `lastUpdateTime` 为 2026-11-06 04:28:40（模拟器时区），APK 指纹相同。复验期间 CDP 无未捕获异常；logcat 未出现 `FATAL EXCEPTION`、`ANR in`、`JS_FreeRuntime`、`Uncaught TypeError`、`CLEARTEXT` 或 `source not found`。设备退出记录只有正常的强制停止/覆盖安装和 WebView 沙箱子进程回收。
+
+### 26.4 D-34 回归依据与修法边界
+
+- **失败时的真实事件链**：`click` 到达按钮后弹层开始出现；WebView 随后合成 `mouseenter`，约 100ms 后合成 `mouseleave`，`handlMsLeave()` 再等 100ms 执行 `visible=false`。实测弹层约 551ms 出现、651ms 已消失；`elementFromPoint` 命中的是按钮内 SVG，不存在透明遮挡层。
+- **为什么只改按钮**：`PopupDismiss` 的关闭契约是对 `.popup` 派发合成 `mouseleave`，再由组件自己的 `handlMsLeave()` 落地。若给 `Popup` 的 `mouseleave` 也加 fine-pointer 门禁，触屏将没有任何可用的遮罩关闭路径。因此覆写只门禁按钮的 `mouseenter/mouseleave`，弹层的 `mouseenter/mouseleave` 原样保留。
+- **`autoshow` 未全局改动**：`autoshow` 仍保留桌面 hover 语义，接鼠标/触控板时 `(hover: hover) and (pointer: fine)` 命中，行为与上游一致；纯触摸设备只靠 click 打开，避免影响其他 `PopupBtn` 的桌面语义。
+- **非目标**：`PopupDismiss` 的坐标判定、底部抽屉样式和 z-index 均未改；本轮只修“触摸后合成 hover 关闭”这一条路径。
+
+---
+
+## 27. 移动端曲库两级结构（D-35，2026-11-06）
+
+本轮只修改移植层的 Svelte/TypeScript，不改 `source/`。最终 Debug APK 为 `porting/android/app/build/outputs/apk/debug/app-debug.apk`，20,353,254 B，构建时间 2026-11-06 12:44:57 +08:00，SHA-256 `C64D4E101856F58676244F0540F6B906F6AE2426E12274BC45FE34CD79A180F1`，入口 `main.ByXZk12O.js`、样式 `style.BC-s8zPF.css`。APK 已覆盖安装到 API 36 / x86_64 模拟器和 Xiaomi 2211133C / Android 16 真机；两台设备内 `base.apk` 的大小与 SHA-256 均与本地一致。
+
+### 27.1 现象与根因
+
+真机进入曲库时，地址不是一级列表，而是 `#/library?id=love`；页面直接展示「我喜欢」，导入和收藏的歌单没有可见入口。数据库侧歌单数据本身正常，问题不在导入链路：
+
+- 默认列表：`default` 试听列表 100 首、`love` 我喜欢 1 首、`last_played` 播放历史。
+- 顶层用户歌单 9 个，包括周杰伦、许嵩、香港地区榜、林俊杰等收藏歌单。
+- 移动端一级应显示默认 2 个列表 + 用户 9 个歌单，共 11 行；`last_played` 不应混入「我的歌单」。
+
+根因有两层：移动壳不渲染桌面 `Aside`，因此上游放在侧栏里的「我的歌单」完全不存在；同时上游 `Library` 在没有 `$query.id` 时会把路由补成上次选择或 `LIST_IDS.LOVE`。两处叠加后，`/library` 必然被改成 `/library?id=love`，一级列表没有渲染机会。
+
+### 27.2 修法
+
+- 新增 `porting/js/ui/pages/MobileLibraryLists.svelte`：使用 `defaultLists + useUserList(null)`，只渲染默认列表和顶层用户歌单，不把播放历史和子歌单混进一级。
+- 新增 `porting/js/ui/pages/MobileLibraryListItem.svelte`：展示封面、歌单名、歌曲数和右箭头；点击执行 `push('/library?id=…')`，形成一级到二级的导航栈。
+- 修改 `porting/js/ui/overrides/views/Library/index.svelte`：无 `id` 时渲染 `MobileLibraryLists`，有合法 `id` 时继续使用上游 `MusicList`；删除「无 `id` 就恢复上次选择 / `love`」的兜底，仅在 `id` 失效时 `replace('/library')`。
+- 修改 `porting/js/ui/shell/MobileAppShell.svelte`：`/library` 一级不显示返回键，`/library?id=…` 二级显示返回键；底部 Tab 在两级路由下都保持「曲库」高亮。
+- 修改 `porting/js/ui/boot/androidBack.ts`：只有无 `id` 的 `/library` 才属于根级；二级歌曲页按 Android 返回键会回到一级，不再触发「再按一次退出」。
+
+### 27.3 真机复验
+
+复验设备为 Xiaomi 2211133C / Android 16，无线调试 `192.168.1.39:39405`，392×872 CSS，dpr 2.75。
+
+- 冷启动后页面停在 `#/library`，没有 `id=love`；一级显示「我的歌单 / 11 个歌单」，逐行为「我喜欢、试听列表」加 9 个用户歌单，播放历史未混入。截图见 `artifacts/qa-device-library-home-39405.png`。
+- 一级没有 AppBar 返回键；点击周杰伦收藏歌单后地址为 `#/library?id=hxs2wb6eja`，标题、65 首歌曲、播放全部和随机播放均正常显示。二级出现返回键，底部「曲库」仍为 `active`。截图见 `artifacts/qa-device-library-list-39405.png`。
+- 点 AppBar 返回键回到 `#/library`，一级恢复且返回键消失；再次进入歌单后执行 `adb shell input keyevent 4`，同样回到一级，应用进程未退出。
+- 在二级页再次点击底部「曲库」Tab，也会回到 `/library`，不会停留在关联歌曲页。
+- CDP 无未捕获异常；logcat 未出现 `FATAL EXCEPTION`、`ANR in` 或 `Uncaught TypeError`。
+
+### 27.4 门禁与边界
+
+- `pnpm typecheck`：移植层 strict 通过，0 错误；`pnpm smoke` 通过，产物、worker、Ports、SQLite 和扩展沙箱检查全绿。
+- `pnpm build:all` 通过；`:app:assembleDebug -PskipWeb=true -PrequireWeb=true` 为 `BUILD SUCCESSFUL`。
+- 从 `porting/android` 连续执行两次 `check-webdist.mjs` 及一次 `check-webdist.mjs --assets`，三次均为 `VERDICT: OK`；`index.html`、`main.ByXZk12O.js`、extension-preload 三项指纹在 `dist` 与 APK assets 间全等。
+- 真机 `lastUpdateTime` 为 2026-11-06 12:45:24，模拟器为 2026-11-06 04:45:22（模拟器时区）；两台设备内 `base.apk` 均为 20,353,254 B，SHA-256 与本地一致。
+- 一级列表只覆盖顶层歌单，和桌面「我的歌单」保持同一层级语义；歌单文件夹内的子歌单仍不在一级平铺。
+
+## 28. 桌面专属设置清理（D-36，2026-11-06）
+
+### 28.1 处置范围
+
+PDR-007 原先只写了“隐藏桌面专属项”，实际设置页仍显示 13 个一级入口，其中“快捷键设置”和“软件更新”在 Android 上没有可用后端，其他页面还混有窗口、任务栏和桌面输出设备配置。本轮按以下边界处理：
+
+- 移除两个整段：`hotkey`（快捷键设置）与 `update`（软件更新）。这 7 个更新/快捷键控件在 Android 上不是“暂时不可用”，而是没有用户路径。
+- 基本设置移除：窗口尺寸、播放栏样式、字体设置。移动壳固定使用 MiniPlayer，WebView 也没有可枚举的系统字体列表。
+- 播放设置移除：任务栏播放进度、标题栏歌词、媒体输出设备。前两者修改的是桌面窗口标题/任务栏，后者由 Android 系统负责音频路由。
+- 其他设置移除：透明窗口。该配置只影响 Electron 窗口透明效果。
+- 网络代理反向处理：保留“HTTP 代理设置”，移除上游的 `VITE_IS_DESKTOP` 禁用条件。Android 的 `HttpPort` / OkHttp 已支持应用级代理，原实现属于 UI 与宿主能力不一致。
+- 所有底层配置 key 保持原样。此次只改变设置页的可见项，已有配置文件、备份与 WebDAV 同步不需要迁移。
+
+设置表通过 `ui/overrides/views/Setting/AppSetting/settings.ts` 对上游原表过滤，并由 `@ui-raw/views/Setting/AppSetting/settings` 直取上游定义，避免复制和维护整份设置清单。网络页单独覆写，其余表单逻辑保持不变。
+
+### 28.2 其他桌面交互复核
+
+- 移动壳不渲染桌面 `Aside` / `Header` / `PlayBar`，不存在托盘、最小化、最大化、窗口拖动入口；播放详情的全屏键只在上游桌面/网页分支渲染，Android 不生成。
+- 桌面歌词按钮只在 `VITE_IS_DESKTOP` 时挂载；Android 播放详情不显示该按钮。
+- 文件浏览、歌曲行、队列与滚动位置已使用单击/长按语义；文件浏览器的双击窗口此前已移除。
+- 当前启用的 `Online Metadata`、LX 音源没有提供专辑/歌手搜索资源，在线搜索实测仅出现“搜索 / 歌单 / 排行榜”，不存在会进入空白模板的专辑/歌手 Tab。
+- 歌曲排序弹窗使用普通 Radio 与确认按钮，不依赖拖拽或 Ctrl 键；当前没有需要为此单独改动的触屏操作。
+- 歌曲菜单中的“在文件夹中显示”只对桌面渲染；下载入口在上游注释关闭。手机菜单不出现这两个无后端动作。
+
+### 28.3 真机与模拟器复验
+
+- 覆盖安装后，Xiaomi 2211133C / Android 16 真机与 API 36 模拟器的设置导航均从 13 项降为 11 项：“快捷键设置”“软件更新”消失。
+- 真机逐页读取设置内容：基本设置不再包含窗口尺寸、播放栏样式、字体；播放设置不再包含任务栏进度、标题栏歌词、媒体设备；其他设置不再包含透明窗口。网络设置仍保留，代理开关、主机、端口三个控件均为可编辑状态（`disabled=false`）。
+- 392×872 真机截图见 `artifacts/qa-d36-settings-network-39405.png`。一级设置 chip、网络表单、MiniPlayer 与底部 Tab 无重叠，代理输入框可直接聚焦。
+- 两台设备在设置页遍历与页面切换期间，CDP 未捕获异常；logcat 未出现 `FATAL EXCEPTION`、`ANR in com.anylisten.android`。
+
+### 28.4 门禁与边界
+
+- `pnpm typecheck`：移植层 strict 通过，0 错误；`pnpm smoke` 通过。
+- `pnpm build:all` 通过；`:app:assembleDebug -PskipWeb=true -PrequireWeb=true` 为 `BUILD SUCCESSFUL`。
+- 从 `porting/android` 连续执行两次 `check-webdist.mjs` 及一次 `check-webdist.mjs --assets`，三次均为 `VERDICT: OK`；入口为 `main.y5rIzLsK.js`，样式仍为 `style.BC-s8zPF.css`。
+- 最终 APK 为 20,353,255 B，SHA-256 `2AE5ADC37693F16F308468489A8C2C8A33F2C28A9E496C16D1B4AFB966316619`；真机 `lastUpdateTime` 为 2026-11-06 12:58:40，模拟器为 2026-11-06 04:58:38（模拟器时区），两端设备内 `base.apk` 指纹均与本地一致。
+- 被移除的只是设置入口，不删除底层能力：实体键盘仍可使用已配置快捷键，配置 key 与备份保持兼容；以后若恢复某个桌面项，只需调整过滤表。
+
+---
+
+## 29. 在线歌单移动布局修复（D-37，2026-11-06）
+
+本轮只修改 `porting/js/ui/mobile.less` 和静态门禁 `porting/js/scripts/smoke.mjs`，不改 `source/`。在线歌单的数据链路本身正常：直接进入「歌单」会自动补 `s=online-metadata_kg&st=5` 并加载列表，歌单详情也能进入；本轮处理的是桌面定尺在手机上的裁切、重叠和关闭态抽屉常驻。
+
+### 29.1 现象与根因
+
+- **歌单卡越界**：上游歌单卡是桌面横向卡，`min-width:300px` 且高度固定；移动端全局 `ul` 网格又强制两列。412dp 模拟器上每列约 174.36dp，但卡片仍按 300dp 排版，实测卡片右边界到 502dp，右列文字和封面被视口裁掉。
+- **头部控件重叠**：歌单页左侧「搜索 / 歌单 / 排行榜」与右侧「打开歌单 / 标签 / 排序」共用一行。392dp 真机上右侧过滤区从 `x=32` 开始，直接压在资源类型 Tab 上。
+- **关闭态弹层常驻**：标签弹层关闭时只有 `aria-hidden=true`，没有 `inert`。全局 BottomSheet 规则把 `.popup` 统一改成 `display:flex`，因此关闭态仍出现在 `y=764`、高约 108.6dp 的底部区域，遮住分页和 TabBar。
+- **搜索歌单同样受影响**：搜索结果复用同一张歌单卡和同一组头部控件，具有相同的两列裁切。
+- **排行榜未受同一问题影响**：排行榜卡不含 `.songlist-info`，仍是独立的封面网格；榜单详情页正常。
+
+### 29.2 修法
+
+- 仅在头部确实存在 `.online-songlist-header-right` 时，将 `.header` 改为两行 grid：第一行资源类型 Tab，第二行打开歌单、标签和排序；没有这组过滤控件的普通在线页保持原布局。
+- 仅对 `ul:has(.songlist-info)` 的歌单列表改单列；卡片取消桌面 `min-width` 和固定高度，封面固定 96dp，标题最多两行，作者、日期和播放量在右列内收口。排行榜卡没有 `.songlist-info`，继续使用两列网格。
+- 标签弹层按 `aria-hidden` 显式设置 `display:none/flex`；打开时由 `.tag-list` 的全屏伪元素提供 z-index 119 遮罩，弹层本体保持 z-index 120。
+- 覆盖全局二级 Tab 的 `display:flex` 命中，把弹层内部标签列表恢复为纵向换行和自身滚动；同时让 `#online-header-right` 使用可见溢出，避免绝对定位抽屉被横向滚动容器裁切。
+- `smoke.mjs` 从“只查选择器字符串”升级为“选择器 + 关键声明”检查，锁住两行头部、单列卡、最小宽度移除、关闭态隐藏、打开态展开和标签纵向换行。
+
+### 29.3 模拟器与真机复验
+
+**API 36 模拟器（412×915 CSS）**
+
+- 直接「歌单」：卡片列表为单列 380.2dp，卡片 `x=16 / width=380.19 / height=112`，封面 96×96；页面 `scrollWidth=clientWidth=412`，无横向溢出。
+- 顶部两行：资源类型区 `y=108 / height=44`，筛选区 `y=156 / height=96`；英文筛选标签自然换行，不再覆盖一级 Tab。
+- 关闭态标签弹层：`aria-hidden=true`、`display:none`、`0×0`。打开后底部抽屉 `y=366 / height=549 / z=120`，标签按行排列；点击遮罩后恢复为关闭态。
+- 搜索歌单：结果卡同为单列 380.2dp。排行榜：列表仍为 2 列 174.4dp 封面卡；详情页歌曲行正常。打开歌单弹窗的内容区完整位于底部安全区内。
+- 冷启动直接进入歌单：等待 6.5 秒后 `loading=false`、26 张卡可见，没有再复现此前偶发的永久 Loading。
+- 分页切到第 2 页：地址增加 `p=2`，活动页变为 2，返回 20 张新卡。歌单收藏首次写入成功，重复点击会提示 `The same playlist ... already exists locally`；点第一首歌后 MiniPlayer 显示「你曾是少年 - S.H.E / Getting the song link...」。
+
+**Xiaomi 2211133C / Android 16 真机（392.7×872 CSS，dpr 2.75）**
+
+- 直接「歌单」：头部高 104dp，资源类型区 360.7×44，筛选区 360.7×44；歌单卡 `x=16 / width=360.7 / height=112.5`，无文字或图片越界。
+- 标签抽屉：关闭态 `0×0`；打开后 `y=349.1 / width=392.7 / height=523.6`，标签按 6/6/3 行换行，遮罩和抽屉层级正确。
+- 搜索歌单：结果卡 360.7dp 单列；排行榜 56 项保持 2 列 174.36dp；榜单详情与「打开歌单」弹窗均完整可见，弹窗内容底边为 `756.7`，没有压到系统导航区。
+
+证据截图：`artifacts/qa-d37-songlist-5568.png`、`qa-d37-tag-popup-5568.png`、`qa-d37-search-songlist-5568.png`、`qa-d37-topsongs-5568.png`、`qa-d37-topsongs-detail-5568.png`、`qa-d37-openlist-5568.png`；真机对应 `*-37981.png`。旧问题的对照证据为 `qa-online-songlist-before-38313.png`、`qa-online-topsongs-before-38313.png`。
+
+### 29.4 门禁、交付物与边界
+
+- `pnpm typecheck`：移植层 strict 0 错误；`pnpm build:all` 通过；`pnpm smoke` 通过，新增的 6 项在线歌单 UI 守卫全部命中。
+- `:app:assembleDebug -PskipWeb=true -PrequireWeb=true` 为 `BUILD SUCCESSFUL`；从 `porting/android` 连续执行两次 `check-webdist.mjs` 及一次 `check-webdist.mjs --assets`，三次均为 `VERDICT: OK`，`index.html`、`main.y5rIzLsK.js`、extension-preload 三项指纹 dist↔assets 全等。
+- 最终 APK 为 20,353,255 B，构建时间 2026-11-06 13:46:03 +08:00，SHA-256 `2DB8A36B45A20C1BEBA142421EA482C930B1F6325B8A039AE43C5BFAFA346220`；入口 `main.y5rIzLsK.js`，样式 `style.DXj1ZTi0.css`。真机 `lastUpdateTime` 为 13:50:58，模拟器为 05:46:02（模拟器时区）；两端设备内 `base.apk` 均为同一 SHA-256。
+- CDP 未捕获页面异常；真机与模拟器 logcat 均未出现 `FATAL EXCEPTION`、`ANR in com.anylisten.android`、`Uncaught TypeError` 或 `JS_FreeRuntime`。第三方 `Online Metadata` 仍会打出 `finishFlush` 日志，部分源站封面使用 HTTP 或返回 404 时仍显示占位图；它们不阻断歌单文本、分页、收藏与详情，本轮未改扩展和网络白名单。
+- 本轮边界仍是手机竖屏；横屏、平板/折叠屏和外接指针没有新增覆盖。没有新增 Svelte 覆写，桌面数据链路和 `source/` 均保持不变。

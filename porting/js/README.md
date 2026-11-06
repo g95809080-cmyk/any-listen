@@ -95,7 +95,7 @@ porting/js/
 │  ├─ shell/MobileAppShell.svelte 页面容器：AppBar + Router + MiniPlayer + TabBar + 安全区
 │  ├─ shell/MobileAppBar.svelte   顶栏（返回 / 标题 / 动作）
 │  ├─ shell/MobileTabBar.svelte   3 个 Tab（曲库 / 在线 / 设置），56px + 安全区
-│  ├─ shell/MiniPlayer.svelte     吸底迷你播放器（60px 条 + 内部 44dp 命中区，点击进播放详情）
+│  ├─ shell/MiniPlayer.svelte     吸底迷你播放器（主体进播放详情，右端复用 PlaylistBtn 打开底部队列）
 │  ├─ compositions/longPress.ts   document 层长按 → 合成 contextmenu（让 34 处右键菜单零改造）
 │  └─ overrides/                  单文件级覆盖的上游组件（见 §3.5）
 └─ scripts/
@@ -209,8 +209,12 @@ UI 改造同样**不碰 `source/`**：`resolveId` 里有一张「上游绝对路
 | 上游组件 | 覆盖文件 | 为什么必须覆盖（而不是纯 CSS） | 批次 |
 |---|---|---|---|
 | `view-main/src/components/common/MusicList/List/index.svelte` | `ui/overrides/components/common/MusicList/List/index.svelte` | 需要**新增一个 DOM 节点**（`.multiselect-entry` 悬浮按钮）和 `.mobile-select-bar` 容器，CSS 无法凭空造元素；同时把行高改成 4.5 行视口 | 本批次 |
+| `view-main/src/views/Setting/index.svelte` | `ui/overrides/views/Setting/index.svelte` | 设置改为一级分组首页 + 二级详情页，并兼容旧 `type/id` 地址 | D-38 |
+| `view-main/src/views/Setting/AppSetting/SettingView.svelte` | `ui/overrides/views/Setting/AppSetting/SettingView.svelte` | 二级页去掉桌面左栏与重复标题，内容改为独立滚动区和单列卡片 | D-38 |
+| `view-main/src/views/Setting/AppSetting/SettingCommonItem.svelte` | `ui/overrides/views/Setting/AppSetting/SettingCommonItem.svelte` | 布尔项整行触控，单选与输入项改为手机纵向布局 | D-38 |
+| `view-main/src/views/Setting/ExtensionSetting/ExtensionSetting.svelte` | `ui/overrides/views/Setting/ExtensionSetting/ExtensionSetting.svelte` | 扩展设置接新路由、补空态，切换条改为可横滑导航 | D-38 |
 
-**以下 5 项 uiux 规格里标了 O-2…O-5 / O-1b，本批次有意不覆盖**，理由逐条如下（不是遗漏）：
+**以下规格里标了 O-2…O-5 / O-1b，本批次有意不覆盖**，理由逐条如下（不是遗漏）：
 
 | 规格项 | 上游文件 | 不覆盖的理由 |
 |---|---|---|
@@ -218,7 +222,7 @@ UI 改造同样**不碰 `source/`**：`resolveId` 里有一张「上游绝对路
 | O-2 | `views/Library/index.svelte` | 布局（双行卡片 grid、`--card-min:150px`）纯样式可达，已在 `mobile.less` §6 用 `html.mobile .my-list .container` 实现 |
 | O-3 | `views/Search/index.svelte` | 上游该文件是 **5 行空壳**（功能在 `views/.../Search` 的兄弟组件里，且依赖 IPC 搜索契约）。TabBar 因此暂时只放 3 个 Tab。**⚠️ 搜索入口待 IPC 搜索契约定义后补**（不是永久缺失）：契约定了就把 `MobileTabBar` 加回第 4 个 Tab + 补这个覆写 |
 | O-4 | `LyricPlayer.svelte` | 歌词字号/行距由 `mobile.less` 的 CSS 变量 + `html.mobile` 前缀解决（特异性 `0,2,1` 必赢 Svelte scoped 的 `0,2,0`） |
-| O-5 | `AppSetting.svelte` | 设置页「两栏 → chip 横滚条」纯样式可达，已在 `mobile.less` §9 实现 |
+| O-5 | `AppSetting.svelte` | 设置页已从桌面两栏改为手机一级分组 + 二级详情；不能只靠样式造出二级路由和独立滚动区，因此改为覆写 `Setting/index.svelte` 等 4 个组件，详见 §3.5 表 |
 | N-6/7 | `BottomSheet` / `ActionSheet` 独立组件 | 一条全局规则 `html.mobile .menu, html.mobile .popup { position: fixed; bottom: 0; ... }` 把全部右键菜单统一转成 BottomSheet，不需要独立组件 |
 | N-8/9 | `LibraryHome` / `SearchPage` | 同 O-2 / O-3 |
 | N-12 | `swipeDismiss` 手势 | 依赖独立 BottomSheet 组件；菜单统一转换后，下滑关闭由原生 `WebView` 的 overscroll 兜底。**列为已知缺口**（手感不如原生 sheet） |
@@ -604,7 +608,7 @@ aapt2 对 `.wav`/`.mp3` 这类"看起来已压缩"的扩展名直接 `Stored`（
   <MobileAppShell>
     <MobileAppBar />             ← 路由感知：首页显示标题，二级页显示返回
     <Router>                     ← 上游 view-main 的 6 个视图，懒加载
-    <MiniPlayer />               ← 60px 吸底条，点进 <PlayDetail>
+    <MiniPlayer />               ← 60px 吸底条；主体进 <PlayDetail>，右端打开底部播放队列
     <MobileTabBar />             ← 3 个 Tab，56px + safe-area-inset-bottom
   </MobileAppShell>
   <PlayDetail />                 ← 上游播放详情（全屏纵排布局由 mobile.less 调整）

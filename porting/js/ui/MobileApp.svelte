@@ -7,6 +7,7 @@
 
   import MobileAppShell from './shell/MobileAppShell.svelte'
   import { installLongPressContextMenu } from './compositions/longPress'
+  import { installSystemBarAppearance } from './compositions/systemBars'
 
   const appReady = useAppAeady()
 
@@ -15,7 +16,12 @@
     const root = document.getElementById('root')
     if (root) root.style.display = 'block'
     // 全局长按 → contextmenu：让上游 34 处右键菜单在触屏上可用（配合 mobile.less 变 BottomSheet）
-    return installLongPressContextMenu()
+    const disposeLongPress = installLongPressContextMenu()
+    const disposeSystemBars = installSystemBarAppearance()
+    return () => {
+      disposeLongPress()
+      disposeSystemBars()
+    }
   })
 </script>
 

@@ -1,11 +1,16 @@
 <script lang="ts">
   import Router from '@ui/plugins/svelte-spa-router/Router.svelte'
-  import routes, { location, push, query, replace } from '@ui/plugins/routes'
+  import routes, { location, query, replace } from '@ui/plugins/routes'
   import { musicInfo } from '@ui/modules/player/reactive.svelte'
   import { userListsAll } from '@ui/modules/musicLibrary/reactive.svelte'
   import { importLocalFile } from '@ui/components/layout/Aside/MyList/action'
   import { LIST_IDS } from '@any-listen/common/constants'
+  import { _locale, i18n } from '@ui/plugins/i18n'
   import { t, tm } from '@porting/ui/i18n'
+  import {
+    SETTINGS_SECTION_TITLE_KEYS,
+    resolveSettingsRoute,
+  } from '@porting/ui/settings/navigation'
 
   import MiniPlayer from './MiniPlayer.svelte'
   import MobileAppBar from './MobileAppBar.svelte'
@@ -13,31 +18,25 @@
   import MobileTabBar from './MobileTabBar.svelte'
 
   const hasMusic = $derived(!!$musicInfo.id)
+  const path = $derived($location.split('?')[0] ?? '')
+  const isLibrary = $derived(path === '/library')
+  const settingsRoute = $derived(resolveSettingsRoute($query))
+  const isSettingsChild = $derived(path === '/settings' && settingsRoute.kind !== 'home')
   /**
    * 根级页面（底部有 MiniPlayer + TabBar 压着）需要留白；
    * 播放详情是 overlay，不走这里。
+   *
+   * 曲库现在分两级：`/library` 是一级歌单列表，`/library?id=…` 是二级歌曲页。
+   * 二级页必须显示返回键，否则用户只能点底部 Tab 或按 Android 返回；后者还需要
+   * `androidBack.ts` 同时把带 id 的曲库路由当作子页（见该文件的根级判据）。
    */
   const isRoot = $derived(
-    ['/online', '/library', '/search', '/settings'].some(
-      (p) => $location === p || $location.startsWith(p + '?')
-    )
+    isLibrary
+      ? !$query.id
+      : ['/online', '/search'].includes(path) ||
+          (path === '/settings' && settingsRoute.kind === 'home')
   )
-
-  /**
-   * 设置页（D-12）：扩展管理页 `#/extenstion` 在移动壳原本**零入口** ——
-   * 上游只把它挂在 `Aside/Nav.svelte` 与 `Header/ControlBtnsDesktop.svelte` 上，
-   * 那两个组件移动壳根本不渲染。PDR-002 明确要求保留第三方扩展能力
-   *（安装 / 启用 / 停用 / 重启扩展宿主），所以入口必须补上。
-   *
-   * 落点选「设置页顶栏右侧的一个 44dp 文字按钮」，而不是第 4 个 Tab：
-   * 3 Tab 的信息架构已冻结（uiux），扩展管理是低频维护页，不属于一级导航。
-   * 用文字而不是图标：图标库里没有语义明确的「扩展」图标，猜一个符号会让人认不出。
-   */
-  const isSettings = $derived(
-    $location === '/settings' || $location.startsWith('/settings?')
-  )
-  const isOnline = $derived($location.split('?')[0] === '/online')
-  const isLibrary = $derived($location.split('?')[0] === '/library')
+  const isOnline = $derived(path === '/online')
   const importList = $derived($userListsAll.find((list) => list.id === $query.id))
   const canImport = $derived(
     importList != null && importList.id !== LIST_IDS.LAST_PLAYED &&
@@ -50,27 +49,42 @@
       console.error('[mobile] 导入本地音乐失败', error)
     })
   }
-  const openExtension = () => {
-    void push('/extenstion')
-  }
 
   /**
    * 顶栏标题。**必须按路径前缀判断**：svelte-spa-router 的 `$location` 带查询串
    *（实测 `#/library?id=love` → `/library?id=love`），直接等值比较会全部落空。
    */
   function resolveTitle(loc: string): string {
-    const path = loc.split('?')[0] ?? ''
-    if (path.startsWith('/extenstion')) return tm('mobile__extension_manage')
-    if (path.startsWith('/library')) return tm('mobile__tab_library')
-    if (path.startsWith('/online')) return tm('mobile__tab_online')
-    if (path.startsWith('/search')) return tm('mobile__tab_search')
-    if (path.startsWith('/settings')) return t('setting')
+    const currentPath = loc.split('?')[0] ?? ''
+    if (currentPath.startsWith('/extenstion')) return tm('mobile__extension_manage')
+    if (currentPath.startsWith('/library')) return tm('mobile__tab_library')
+    if (currentPath.startsWith('/online')) return tm('mobile__tab_online')
+    if (currentPath.startsWith('/search')) return tm('mobile__tab_search')
+    if (currentPath === '/settings') {
+      switch (settingsRoute.kind) {
+        case 'section':
+          return i18n.t(SETTINGS_SECTION_TITLE_KEYS[settingsRoute.section])
+        case 'extension':
+          return tm('mobile__settings_extension')
+        case 'logs':
+          return i18n.t('settings__type_logs')
+        default:
+          return t('setting')
+      }
+    }
     return tm('mobile__tab_library')
   }
 
-  const title = $derived(resolveTitle($location))
+  const title = $derived.by(() => {
+    void $_locale
+    return resolveTitle($location)
+  })
 
   const goBack = () => {
+    if (isSettingsChild && history.length <= 1) {
+      void replace('/settings')
+      return
+    }
     // 深链直达时 history 里没有上一页，回退会直接退出应用 —— 兜底回曲库
     if (history.length > 1) history.back()
     else void replace('/library')
@@ -90,10 +104,6 @@
       {:else if isLibrary && canImport}
         <button class="ab-entry" type="button" aria-label={tm('mobile__library_empty_import')} onclick={importMusic}>
           {tm('mobile__library_import')}
-        </button>
-      {:else if isSettings}
-        <button class="ab-entry" type="button" onclick={openExtension}>
-          {tm('mobile__extension_manage')}
         </button>
       {/if}
     {/snippet}
