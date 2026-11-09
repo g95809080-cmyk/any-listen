@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -21,6 +23,16 @@ import com.anylisten.ports.PortRegistry
 import com.anylisten.ports.media.MediaAction
 import com.anylisten.ports.media.MediaMetadataSnapshot
 import com.anylisten.ports.media.MediaSessionSink
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 前台播放服务（§4.6 / R-09）：系统媒体会话 + MediaStyle 常驻通知。
@@ -46,21 +58,18 @@ class PlaybackService : android.app.Service() {
   /** `refreshNotification()` 的批次合并标记（见该方法的注释）；sink 回调可能来自 IO 线程，故 @Volatile */
   @Volatile private var refreshScheduled = false
   private val mainHandler = Handler(Looper.getMainLooper())
-  private val demoteAfterPause = Runnable {
-    if (foregroundStarted && !registry.mediaSession.snapshot().isPlaying) {
-      stopForeground(STOP_FOREGROUND_DETACH)
-      foregroundStarted = false
-      runCatching {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
-      }.onFailure { Log.w(TAG, "paused notification failed: ${it.message}") }
-    }
-  }
 
   /** 通知栏歌词（`player.isShowMediaSessionLyric`）与展开态第二行 */
   @Volatile private var lyricLine: String? = null
   @Volatile private var lyricNext: String? = null
   @Volatile private var lyricEnabled: Boolean = true
   @Volatile private var metadataDurationMs: Long = -1
+  @Volatile private var currentMetadata: MediaMetadataSnapshot? = null
+  @Volatile private var currentArtwork: Bitmap? = null
+  @Volatile private var currentArtworkUrl: String? = null
+
+  private val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private var artworkJob: Job? = null
 
   private val sessionSink = object : MediaSessionSink {
     override fun onMetadataChanged(metadata: MediaMetadataSnapshot?) {
@@ -71,11 +80,6 @@ class PlaybackService : android.app.Service() {
     override fun onPlaybackStateChanged(state: String) {
       applyPlaybackState(state)
       refreshNotification()
-      mainHandler.removeCallbacks(demoteAfterPause)
-      if (state != "playing") {
-        // 切歌时也会短暂经过 paused；不要因此在后台退出前台服务。
-        mainHandler.postDelayed(demoteAfterPause, PAUSE_DEMOTION_DELAY_MS)
-      }
     }
 
     override fun onPositionChanged(durationMs: Long, positionMs: Long, playbackRate: Float) {
@@ -147,8 +151,8 @@ class PlaybackService : android.app.Service() {
 
   override fun onDestroy() {
     Log.i(TAG, "PlaybackService destroyed")
-    mainHandler.removeCallbacks(demoteAfterPause)
     foregroundStarted = false
+    artworkScope.cancel()
     runCatching {
       stopForeground(STOP_FOREGROUND_REMOVE)
       getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
@@ -186,15 +190,105 @@ class PlaybackService : android.app.Service() {
   }
 
   private fun applyMetadata(metadata: MediaMetadataSnapshot?) {
+    currentMetadata = metadata
+    val artworkUrl = metadata?.artworkUrl?.takeIf { it.isNotBlank() }
+    if (artworkUrl != currentArtworkUrl) {
+      currentArtworkUrl = artworkUrl
+      currentArtwork = null
+      loadArtwork(artworkUrl)
+    }
+
     val durationMs = registry.mediaSession.snapshot().durationMs
     val builder = MediaMetadataCompat.Builder()
       .putString(MediaMetadataCompat.METADATA_KEY_TITLE, metadata?.title ?: "")
       .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, metadata?.artist ?: "")
       .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, metadata?.album ?: "")
       .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs)
+    if (artworkUrl != null) {
+      builder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, artworkUrl)
+      builder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artworkUrl)
+    }
+    currentArtwork?.let {
+      builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, it)
+      builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+    }
     mediaSession.setMetadata(builder.build())
     metadataDurationMs = durationMs
   }
+
+  private fun loadArtwork(url: String?) {
+    artworkJob?.cancel()
+    if (url == null) return
+
+    artworkJob = artworkScope.launch {
+      val bitmap = fetchArtwork(url) ?: return@launch
+      withContext(Dispatchers.Main) {
+        if (currentArtworkUrl != url) return@withContext
+        currentArtwork = bitmap
+        applyMetadata(currentMetadata)
+        refreshNotification()
+      }
+    }
+  }
+
+  private fun fetchArtwork(url: String): Bitmap? = runCatching {
+    val localBase = URL("${AppGraph.httpServer.baseUrl}/")
+    val resolved = if (url.startsWith("http://") || url.startsWith("https://")) {
+      URL(url)
+    } else {
+      URL(localBase, url)
+    }
+    val connection = resolved.openConnection() as HttpURLConnection
+    try {
+      connection.instanceFollowRedirects = true
+      connection.connectTimeout = 5_000
+      connection.readTimeout = 8_000
+      connection.setRequestProperty("User-Agent", "AnyListen-Android")
+      if (resolved.host == localBase.host && resolved.port == localBase.port) {
+        connection.setRequestProperty("x-anylisten-token", AppGraph.token)
+      }
+      connection.connect()
+      if (connection.responseCode !in 200..299) return@runCatching null
+
+      val maxBytes = 8 * 1024 * 1024
+      val declaredLength = connection.contentLengthLong
+      if (declaredLength > maxBytes) return@runCatching null
+
+      val output = ByteArrayOutputStream(if (declaredLength > 0) declaredLength.toInt() else 64 * 1024)
+      connection.inputStream.use { input ->
+        val buffer = ByteArray(16 * 1024)
+        var total = 0
+        while (true) {
+          val read = input.read(buffer)
+          if (read < 0) break
+          total += read
+          if (total > maxBytes) return@runCatching null
+          output.write(buffer, 0, read)
+        }
+      }
+
+      val bytes = output.toByteArray()
+      val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+      BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+      if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+
+      var sampleSize = 1
+      while (bounds.outWidth / sampleSize > 1024 || bounds.outHeight / sampleSize > 1024) sampleSize *= 2
+      BitmapFactory.decodeByteArray(
+        bytes,
+        0,
+        bytes.size,
+        BitmapFactory.Options().apply {
+          inSampleSize = sampleSize
+          inPreferredConfig = Bitmap.Config.ARGB_8888
+        },
+      )
+    } finally {
+      connection.disconnect()
+    }
+  }.onFailure {
+    Log.w(TAG, "load artwork failed: ${it.message}")
+  }.getOrNull()
 
   private fun applyPlaybackState(state: String) {
     val snapshot = registry.mediaSession.snapshot()
@@ -300,6 +394,7 @@ class PlaybackService : android.app.Service() {
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       .setDeleteIntent(servicePendingIntent("STOP", 4))
 
+    currentArtwork?.let(builder::setLargeIcon)
     if (subText != null) builder.setSubText(subText)
 
     val actions = snapshot.actions
@@ -410,7 +505,6 @@ class PlaybackService : android.app.Service() {
     private const val CHANNEL_ID = "anylisten.playback"
     private const val NOTIFICATION_ID = 1001
     private const val SESSION_TAG = "AnyListenSession"
-    private const val PAUSE_DEMOTION_DELAY_MS = 5_000L
 
     const val ACTION_PREFIX = "com.anylisten.app.action."
 
