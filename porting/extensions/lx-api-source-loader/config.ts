@@ -23,7 +23,7 @@ const config: ExtensionConfig = {
         name: '{settings.enabledCache}',
         description: '{settings.enabledCacheDescription}',
         type: 'boolean',
-        default: false,
+        default: true,
       },
       {
         field: 'enabledSourceLogout',

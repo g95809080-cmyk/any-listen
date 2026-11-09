@@ -23,6 +23,8 @@ data class HttpResponseData(
   val body: String? = null,
   val raw: ByteArray? = null,
   val filePath: String? = null,
+  /** `filePath` 是否包含完整资源；Range 响应落盘时文件只包含该段内容 */
+  val fileContainsFullResource: Boolean = true,
   val history: List<String> = emptyList(),
 )
 
@@ -59,6 +61,11 @@ interface HttpPort {
   suspend fun proxyRequestByName(name: String, headers: Map<String, String>): HttpResponseData?
 
   /** `/p_static` 的注册表：JS 侧 `createProxy()` 后把 name → url 同步过来 */
-  fun registerProxyTarget(name: String, url: String, headers: Map<String, String>)
+  fun registerProxyTarget(
+    name: String,
+    url: String,
+    headers: Map<String, String>,
+    cacheEnabled: Boolean = false,
+  )
   fun unregisterProxyTarget(name: String)
 }

@@ -1,10 +1,18 @@
 package com.anylisten.ports.http
 
+import android.util.Log
 import com.anylisten.ports.PortErrorCode
 import com.anylisten.ports.PortException
 import com.anylisten.ports.toPortException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
@@ -31,10 +39,15 @@ import kotlin.coroutines.resumeWithException
 class HttpPortImpl(
   private val tempDir: File,
   private val userAgent: String,
+  proxyCacheDir: File? = null,
 ) : HttpPort {
 
   private val calls = ConcurrentHashMap<String, Call>()
   private val proxyTargets = ConcurrentHashMap<String, ProxyTarget>()
+  private val proxyCache = proxyCacheDir?.let { ProxyMediaCache(it) }
+  private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private val cacheJobs = ConcurrentHashMap<String, Job>()
+  private val cacheSlots = Semaphore(2)
 
   @Volatile private var appProxy: ProxySpec? = null
 
@@ -47,7 +60,11 @@ class HttpPortImpl(
     .followSslRedirects(true)
     .build()
 
-  private data class ProxyTarget(val url: String, val headers: Map<String, String>)
+  private data class ProxyTarget(
+    val url: String,
+    val headers: Map<String, String>,
+    val cacheEnabled: Boolean,
+  )
 
   // ---------------------------------------------------------------- request
 
@@ -89,6 +106,7 @@ class HttpPortImpl(
           statusCode = resp.code,
           headers = headers,
           filePath = file.absolutePath,
+          fileContainsFullResource = resp.code != 206,
           history = history,
         )
       }
@@ -229,20 +247,101 @@ class HttpPortImpl(
     return runCatching { request(url, opts) }.getOrElse { null }
   }
 
-  override suspend fun proxyRequestByName(name: String, headers: Map<String, String>): HttpResponseData? {
-    val target = proxyTargets[name] ?: return null
+  override suspend fun proxyRequestByName(name: String, headers: Map<String, String>): HttpResponseData? = withContext(Dispatchers.IO) {
+    val rangeHeader = headerValue(headers, "range")
+    proxyCache?.buildResponse(name, rangeHeader)?.let { return@withContext it }
+
+    val target = proxyTargets[name] ?: return@withContext null
     val merged = filterRequestHeaders(headers) + target.headers
     val opts = HttpRequestOptions(headers = merged, needRaw = true, timeoutMs = 30_000)
-    return runCatching { request(target.url, opts) }.getOrElse { null }
+    val result = runCatching { request(target.url, opts) }.getOrElse { null } ?: return@withContext null
+
+    if (target.cacheEnabled) {
+      if (isFullResponse(result)) {
+        cacheFullResponse(name, result)
+      } else {
+        // 浏览器用 Range 探路时先照常快速转发，同时独立补齐完整文件。
+        scheduleCacheDownload(name, target)
+      }
+    }
+    result
   }
 
-  override fun registerProxyTarget(name: String, url: String, headers: Map<String, String>) {
-    proxyTargets[name] = ProxyTarget(url, headers)
+  override fun registerProxyTarget(
+    name: String,
+    url: String,
+    headers: Map<String, String>,
+    cacheEnabled: Boolean,
+  ) {
+    proxyTargets[name] = ProxyTarget(url, headers, cacheEnabled)
   }
 
   override fun unregisterProxyTarget(name: String) {
     proxyTargets.remove(name)
   }
+
+  private fun cacheFullResponse(name: String, response: HttpResponseData) {
+    val cache = proxyCache ?: return
+    if (cache.find(name) != null) return
+    val source = response.filePath?.let(::File)
+    val installed = when {
+      source != null && source.isFile -> cache.install(name, source)
+      response.raw != null -> cache.install(name, response.raw)
+      response.body != null -> cache.install(name, response.body.toByteArray(Charsets.UTF_8))
+      else -> false
+    }
+    if (!installed) Log.w(TAG, "media cache install failed: $name")
+  }
+
+  private fun scheduleCacheDownload(name: String, target: ProxyTarget) {
+    val cache = proxyCache ?: return
+    val destination = cache.destination(name) ?: return
+    if (cache.find(name) != null || cacheJobs.containsKey(name)) return
+
+    lateinit var job: Job
+    job = cacheScope.launch(start = CoroutineStart.LAZY) {
+      try {
+        cacheSlots.withPermit {
+          downloadTo(
+            url = target.url,
+            destPath = destination.absolutePath,
+            headers = target.headers,
+            timeoutMs = CACHE_DOWNLOAD_TIMEOUT_MS,
+            proxy = null,
+            signalId = null,
+            onProgress = {},
+          )
+        }
+      } catch (e: Throwable) {
+        if (e !is kotlinx.coroutines.CancellationException) {
+          Log.w(TAG, "media cache download failed: $name (${e.message})")
+        }
+      } finally {
+        cacheJobs.remove(name, job)
+      }
+    }
+    val previous = cacheJobs.putIfAbsent(name, job)
+    if (previous == null) job.start() else job.cancel()
+  }
+
+  private fun isFullResponse(response: HttpResponseData): Boolean {
+    if (response.statusCode != 200 && response.statusCode != 206) return false
+    val dataLength = response.raw?.size?.toLong()
+      ?: response.filePath?.let { File(it).length() }
+      ?: response.body?.toByteArray(Charsets.UTF_8)?.size?.toLong()
+      ?: return false
+    if (dataLength <= 0) return false
+
+    val contentRange = headerValue(response.headers, "content-range") ?: return response.statusCode == 200
+    val match = CONTENT_RANGE_PATTERN.matchEntire(contentRange) ?: return false
+    val start = match.groupValues[1].toLongOrNull() ?: return false
+    val end = match.groupValues[2].toLongOrNull() ?: return false
+    val total = match.groupValues[3].toLongOrNull() ?: return false
+    return start == 0L && end == total - 1 && dataLength == total
+  }
+
+  private fun headerValue(headers: Map<String, String>, name: String): String? =
+    headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 
   // ---------------------------------------------------------------- helpers
 
@@ -307,10 +406,13 @@ class HttpPortImpl(
 
   private companion object {
     const val DEFAULT_TIMEOUT_MS = 30_000L
+    const val CACHE_DOWNLOAD_TIMEOUT_MS = 5 * 60_000L
     const val PROGRESS_INTERVAL_MS = 200L
     const val BUFFER_SIZE = 64 * 1024
     /** 超过 4MB 不内联返回（避免 JS 侧一次性持有几十 MB 的 base64） */
     const val MAX_INLINE_BODY = 4L * 1024 * 1024
+    const val TAG = "AnyListen/HttpCache"
+    val CONTENT_RANGE_PATTERN = Regex("""bytes\s+(\d+)-(\d+)/(\d+)""")
 
     val EXCLUDE_REQUEST_HEADERS = setOf(
       "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",

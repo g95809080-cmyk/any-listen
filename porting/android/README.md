@@ -39,7 +39,7 @@ porting/android/
 | `fs/FileSystemPort.kt` | 接口：`listTree`(分批+可取消) / `stat` / `readFile` / `writeFileAtomic` / `mkdirp` / `remove` / `rename` / `copy` / `readdir` / `realpath` / `watch` / `toPlayableUrl` / `getEnv` / `getFreeSpace` |
 | `fs/FileSystemPortImpl.kt` | 显式栈 DFS（避免深目录爆栈）+ 每批 500 条回调 + 逐批检查取消；`writeFileAtomic` = `.tmp → fd.sync() → rename`；`FileObserver` 逐目录注册（上限 1024 目录/深度 8/事件 250ms 合并） |
 | `fs/StreamRegistry.kt` | 路径 → `http://127.0.0.1:17930/stream/<id>`，id = `sha256(path\|mtime\|size)` 前 32 hex + 原扩展名，LRU 8192 条 |
-| `http/HttpPort.kt` / `HttpPortImpl.kt` | OkHttp + `suspendCancellableCoroutine`（协程取消时自动 `call.cancel()`）；>4MB 响应落临时文件返回 `filePath`；`downloadTo` 写 `.part` + SHA-256 + 200ms 节流进度；`proxyRequestByUrl/ByName` 对齐上游 `proxy.ts` 的请求/响应头白名单 |
+| `http/HttpPort.kt` / `HttpPortImpl.kt` / `ProxyMediaCache.kt` | OkHttp + `suspendCancellableCoroutine`（协程取消时自动 `call.cancel()`）；>4MB 响应落临时文件返回 `filePath`；`downloadTo` 写 `.part` + SHA-256 + 200ms 节流进度；`proxyRequestByUrl/ByName` 对齐上游 `proxy.ts` 的请求/响应头白名单；`/p_static` 开启缓存时写 `files/cache/proxy`，命中后支持 Range 并允许跨重启离线播放 |
 | `media/MediaSessionPort.kt` | `MediaSessionCompat` 封装：metadata / playbackState / position / actions / `updateLyricLine` / `onControl` 回调 |
 | `notify/NotificationPort.kt` | `updateLyric(line, next, enabled)` / `showToast` / `showMessageBox` / `clear` |
 | `log/LogPort.kt` | logcat + `filesDir/logs/anylisten-<date>.log`，DEBUG 开关（release 关闭）、8MB 滚动、7 天清理 |
@@ -423,7 +423,7 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
 | `/__health` | 探活 |
 | `/stream/<id>` | 音频流。**必须支持 HTTP Range**：`bytes=start-end` / `start-` / `-suffix`，命中返 `206` + `Content-Range`，越界返 `416`；否则音频拖动进度条会整段重下 |
 | `/p_url/<...>` | 按 URL 代理（音源请求），比 `<audio>` 直连更可控 |
-| `/p_static/<...>` | 按名称代理（已注册的代理目标） |
+| `/p_static/<...>` | 按名称代理（已注册的代理目标）；`cacheEnabled` 为真时写 `files/cache/proxy`，缓存命中直接流式返回并支持 Range |
 | `/proxyUrlToken` | 下发 `p_urlkey` cookie，后续 `/p_url/*` 靠它鉴权 |
 
 - 端口**固定 17930**、只绑 `127.0.0.1`。**不要改成随机端口** —— origin 一变，`localStorage`/`IndexedDB`/`OPFS` 全部丢失（D2 升级路径依赖固定 origin）。
@@ -534,7 +534,7 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
    （`MANAGE_EXTERNAL_STORAGE` 模式下两者相等是预期行为，不是 bug），JS 侧 `displayPath ?? path` 兜底即可。
    虚拟路径要等下一批次（DocumentFile 遍历比 File 遍历慢一个量级，需单独设计分批）。
 5. **`cachePath` 故意指向 `filesDir/cache` 而不是 `context.cacheDir`**（架构决策，已确认保留）。
-   系统能在存储紧张时清 `cacheDir`，而上游把 cache 当"应用自己管的缓存"——封面、代理缓存，
+   系统能在存储紧张时清 `cacheDir`，而上游把 cache 当"应用自己管的缓存"——封面、在线歌曲缓存，
    **以及 `dbService/backupTask` 的数据库备份**。放 `cacheDir` 等于随时可能莫名丢备份，所以宁可占 `filesDir` 配额。
    要改的话得先让上游把"可丢弃"与"不可丢弃"的缓存分两个目录。
    `tempPath` 语义上是纯可丢弃（下载中转、解压临时），后续批次会改成 `context.cacheDir`；

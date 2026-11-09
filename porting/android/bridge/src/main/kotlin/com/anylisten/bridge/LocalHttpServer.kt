@@ -491,7 +491,7 @@ class LocalHttpServer(
       writeText(output, 404, "Not Found", "text/plain; charset=utf-8")
       return
     }
-    writeProxyResult(output, result)
+    writeProxyResult(output, result, request.method)
   }
 
   private suspend fun handleProxyByUrl(request: Request, output: OutputStream, encodedUrl: String) {
@@ -501,24 +501,101 @@ class LocalHttpServer(
       writeText(output, 404, "Not Found", "text/plain; charset=utf-8")
       return
     }
-    writeProxyResult(output, result)
+    writeProxyResult(output, result, request.method)
   }
 
-  private fun writeProxyResult(output: OutputStream, result: com.anylisten.ports.http.HttpResponseData) {
-    val data: ByteArray? = result.raw ?: result.filePath?.let { File(it).readBytes() }
-      ?: result.body?.toByteArray(Charsets.UTF_8)
-    val headers = buildList {
-      result.headers.forEach { (k, v) -> add(k to v) }
-      if (data != null) add("Content-Length" to data.size.toString())
-    }
-    if (data == null) {
-      writeText(output, result.statusCode, "", "text/plain; charset=utf-8")
+  private fun writeProxyResult(
+    output: OutputStream,
+    result: com.anylisten.ports.http.HttpResponseData,
+    method: String,
+  ) {
+    val file = result.filePath?.let(::File)
+    if (file?.isFile == true) {
+      writeProxyFile(output, result, file, method)
       return
     }
+
+    val data: ByteArray? = result.raw ?: result.body?.toByteArray(Charsets.UTF_8)
+    val headers = proxyHeaders(result.headers, data?.size?.toLong() ?: 0, keepContentRange = true)
     writeHead(output, result.statusCode, headers)
-    output.write(data)
+    if (method != "HEAD" && data != null && data.isNotEmpty()) {
+      output.write(data)
+      output.flush()
+    }
+  }
+
+  private fun writeProxyFile(
+    output: OutputStream,
+    result: com.anylisten.ports.http.HttpResponseData,
+    file: File,
+    method: String,
+  ) {
+    val range = if (result.statusCode == 206) parseContentRange(result.headers["Content-Range"] ?: result.headers["content-range"]) else null
+    val fileLength = file.length()
+    val start = range?.start ?: 0L
+    val end = range?.end ?: (fileLength - 1)
+    val fileStart = if (range != null && !result.fileContainsFullResource) 0L else start
+    val available = (fileLength - fileStart).coerceAtLeast(0)
+    val length = if (fileLength == 0L) 0L else minOf(end - start + 1, available)
+    val status = if (range != null) 206 else 200
+    val headers = proxyHeaders(
+      result.headers,
+      length,
+      keepContentRange = false,
+      extra = buildList {
+        add("Accept-Ranges" to "bytes")
+        if (range != null) {
+          add("Content-Range" to "bytes $start-$end/${range.total?.toString() ?: "*"}")
+        }
+      },
+    )
+    writeHead(output, status, headers)
+    if (method == "HEAD" || length == 0L) return
+
+    RandomAccessFile(file, "r").use { raf ->
+      raf.seek(fileStart)
+      val buffer = ByteArray(64 * 1024)
+      var remaining = length
+      while (remaining > 0) {
+        val read = raf.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+        if (read <= 0) break
+        output.write(buffer, 0, read)
+        remaining -= read
+      }
+    }
     output.flush()
   }
+
+  private fun proxyHeaders(
+    source: Map<String, String>,
+    contentLength: Long,
+    keepContentRange: Boolean,
+    extra: List<Pair<String, String>> = emptyList(),
+  ): List<Pair<String, String>> = buildList {
+    source.forEach { (key, value) ->
+      val lower = key.lowercase()
+      if (lower == "content-length" || lower == "transfer-encoding" || lower == "connection") return@forEach
+      if (!keepContentRange && lower == "content-range") return@forEach
+      add(key to value)
+    }
+    extra.forEach { (key, value) ->
+      removeAll { it.first.equals(key, ignoreCase = true) }
+      add(key to value)
+    }
+    removeAll { it.first.equals("Content-Length", ignoreCase = true) }
+    add("Content-Length" to contentLength.toString())
+  }
+
+  private fun parseContentRange(header: String?): ContentRange? {
+    if (header == null) return null
+    val match = CONTENT_RANGE_PATTERN.matchEntire(header.trim()) ?: return null
+    val start = match.groupValues[1].toLongOrNull() ?: return null
+    val end = match.groupValues[2].toLongOrNull() ?: return null
+    val total = match.groupValues[3].takeUnless { it == "*" }?.toLongOrNull()
+    return if (start <= end) ContentRange(start, end, total) else null
+  }
+
+  private data class ContentRange(val start: Long, val end: Long, val total: Long?)
 
   // ---------------------------------------------------------------- raw writers
 
@@ -581,6 +658,7 @@ class LocalHttpServer(
     private const val TAG = "AnyListen/Http"
     private const val BACKLOG = 64
     private const val READ_TIMEOUT_MS = 30_000
+    private val CONTENT_RANGE_PATTERN = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""")
 
     /**
      * 扩展名 → MIME。**必须覆盖 wasm**：`WebAssembly.instantiateStreaming` 要求

@@ -20,7 +20,7 @@ export async function createProxy(url: string, options: Options = {}, enabledCac
     targetUrl = parsed.toString()
   }
   try {
-    await ports.http.registerProxyTarget(name, targetUrl, headers)
+    await ports.http.registerProxyTarget(name, targetUrl, headers, enabledCache === true)
   } catch (error) {
     proxyServerState.proxyMap.delete(name)
     throw error

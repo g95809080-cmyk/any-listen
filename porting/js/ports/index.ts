@@ -212,8 +212,8 @@ function createHttpPort(): HttpPort {
     setProxy(proxy) {
       return callPort('http.setProxy', [proxy])
     },
-    registerProxyTarget(name, url, headers) {
-      return callPort('http.registerProxyTarget', [name, url, headers])
+    registerProxyTarget(name, url, headers, cacheEnabled = false) {
+      return callPort('http.registerProxyTarget', [name, url, headers, cacheEnabled])
     },
     unregisterProxyTarget(name) {
       return callPort('http.unregisterProxyTarget', [name])

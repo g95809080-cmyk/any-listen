@@ -31,7 +31,7 @@
   "settings.addLocalSource": "导入本地自定义源",
   "settings.addRemoteSource": "导入在线自定义源",
   "settings.enabledCache": "启用歌曲缓存",
-  "settings.enabledCacheDescription": "当歌曲链接获取成功时，同时将歌曲缓存到缓存目录",
+  "settings.enabledCacheDescription": "播放时在后台保存完整歌曲，之后断网也能从本地缓存复听",
   "settings.enabledSourceLogout": "启用源日志输出",
   "settings.enabledSourceLogoutDescription": "记录源输出的日志",
   "settings.scriptSources": "自定义源",

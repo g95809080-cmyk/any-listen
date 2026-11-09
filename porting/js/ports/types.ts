@@ -174,7 +174,12 @@ export interface HttpPort {
   ): Promise<{ filePath: string; size: number; sha256: string }>
   cancel(id: string): Promise<void>
   setProxy(proxy: { host: string; port: string } | null): Promise<void>
-  registerProxyTarget(name: string, url: string, headers: Record<string, string>): Promise<void>
+  registerProxyTarget(
+    name: string,
+    url: string,
+    headers: Record<string, string>,
+    cacheEnabled?: boolean
+  ): Promise<void>
   unregisterProxyTarget(name: string): Promise<void>
 }
 

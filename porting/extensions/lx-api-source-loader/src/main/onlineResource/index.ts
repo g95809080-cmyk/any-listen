@@ -7,7 +7,11 @@ export const initOnlineResource = async () => {
       const quality = params.quality || '128k'
       let url = await getMusicUrl(params.musicInfo, quality)
       console.log(`${params.musicInfo.name}, ${params.musicInfo.meta.source}, ${quality}: ${url}`)
-      url = await musicUtils.createProxyUrl(url, {}, (await configuration.getConfigs<[boolean]>(['enabledCache']))[0])
+      url = await musicUtils.createProxyUrl(
+        url,
+        {},
+        (await configuration.getConfigs<[boolean]>(['enabledCache']))[0] ?? true
+      )
       console.log(`proxy: ${url}`)
       return { quality, url }
     },

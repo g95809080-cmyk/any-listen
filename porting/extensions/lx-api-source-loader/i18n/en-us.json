@@ -31,7 +31,7 @@
   "settings.addLocalSource": "Import local custom sources",
   "settings.addRemoteSource": "Import online custom sources",
   "settings.enabledCache": "Enable song cache",
-  "settings.enabledCacheDescription": "When a song link is successfully retrieved, the song will also be cached in the cache directory",
+  "settings.enabledCacheDescription": "Save the complete song in the background while playing, so it can still play offline later",
   "settings.enabledSourceLogout": "Enable source log output",
   "settings.enabledSourceLogoutDescription": "Log output from the source",
   "settings.scriptSources": "custom source",

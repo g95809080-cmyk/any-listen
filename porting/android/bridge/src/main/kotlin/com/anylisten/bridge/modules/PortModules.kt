@@ -101,6 +101,7 @@ class HttpModule(private val registry: PortRegistry) : BridgeModule {
         args.str(0),
         args.str(1),
         args.map(2).entries.associate { (k, v) -> k to v.toString() },
+        args.bool(3, false),
       )
       null
     }

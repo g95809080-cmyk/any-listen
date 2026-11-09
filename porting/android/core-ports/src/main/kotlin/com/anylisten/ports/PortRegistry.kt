@@ -114,6 +114,7 @@ class PortRegistry(
   val http: HttpPort = HttpPortImpl(
     tempDir = File(appContext.cacheDir, "http").apply { mkdirs() },
     userAgent = userAgent,
+    proxyCacheDir = File(storage.cachePath, "proxy"),
   )
 
   val power: PowerPort by lazy { PowerPortImpl(appContext, foregroundServiceAdapter) }
