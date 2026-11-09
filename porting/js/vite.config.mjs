@@ -201,6 +201,10 @@ const OVERRIDES = {
   // `Popup` 的 mouseleave 必须保留给 popupDismiss 的合成关闭路径。
   'view-main/src/components/material/PopupBtn.svelte':
     'ui/overrides/components/material/PopupBtn.svelte',
+  // 播放淡入淡出。上游把 `HTMLAudioElement` 封装在 plugins/player 内，音量只能通过
+  // 导出的 setVolume 控制。覆写保留原实现的全部能力，只在播放/暂停/换源边界做音量包络，
+  // 不把音频改接到 Web Audio GainNode，避免影响 setSinkId、后台播放与音效链。
+  'view-main/src/plugins/player/index': 'ui/overrides/plugins/player/index.ts',
   // O-6：`@/shared/ipc/app` 的两个文件对话框。
   // 上游桌面走 `ipc.showOpenDialog`，Android host **没有也不需要**这个实现（原生 SAF 选择器
   // 拿到的 content:// URI 喂不进 `shims/fs`）；网页版走的是内置文件浏览器弹窗
@@ -258,6 +262,8 @@ const RAW_TARGETS = {
     'view-main/src/components/common/MusicList/List/action',
   '@ui-raw/views/Setting/AppSetting/settings':
     'view-main/src/views/Setting/AppSetting/settings',
+  // 播放器覆写需要保留上游原实现，又不能让 `@/plugins/player` 再次命中覆写表。
+  '@porting-uplink/plugins/player': 'view-main/src/plugins/player/index',
 }
 
 /** Node 内建模块 → shims。键必须写全，不接受 `node:x/y` 前缀模糊匹配（会串味） */

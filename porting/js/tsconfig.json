@@ -32,6 +32,7 @@
       "@porting-uplink/web-server/*": ["../../source/packages/web-server/src/*"],
       "@porting-uplink/extension-host-context": ["../../source/packages/shared/app/modules/worker/extensionService/vm/hostContext/index.ts"],
       "@porting-uplink/proxy-server": ["../../source/packages/shared/app/modules/proxyServer/index.ts"],
+      "@porting-uplink/plugins/player": ["../../source/packages/view-main/src/plugins/player/index.ts"],
       "@/*": ["../../source/packages/web-server/src/*"],
       "@ui/*": ["../../source/packages/view-main/src/*"],
       /* 绕过覆写直取 view-main 原文件（对应 vite.config.mjs 的 RAW_TARGETS 同名条目） */
