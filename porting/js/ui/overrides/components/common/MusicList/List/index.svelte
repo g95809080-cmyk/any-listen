@@ -32,6 +32,7 @@
   import Menu from '@ui/components/common/MusicList/List/Menu.svelte'
   import ListItem from '@ui/components/common/MusicList/List/ListItem.svelte'
   import Header from '@ui/components/common/MusicList/List/Header.svelte'
+  import PlaylistCacheBar from '../PlaylistCacheBar.svelte'
   import SearchList from '@ui/components/common/MusicList/List/components/SearchList.svelte'
   import DuplicateMusicModal from '@ui/components/common/MusicList/List/components/DuplicateMusicModal/index.svelte'
   import ListSortModal from '@ui/components/common/MusicList/List/components/ListSortModal.svelte'
@@ -168,6 +169,9 @@
   }
 </script>
 
+{#if source !== 'local' && list.length}
+  <PlaylistCacheBar listId={listinfo.id} {list} />
+{/if}
 <Header
   {multimode}
   {picwidth}

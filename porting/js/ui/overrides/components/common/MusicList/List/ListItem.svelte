@@ -1,0 +1,490 @@
+<script lang="ts">
+  /**
+   * 上游歌曲行 + 完整的在线缓存状态。
+   *
+   * 缓存文件名无法只靠歌曲对象稳定计算，因此复用 `music_url` 中已经保存的
+   * `/p_static/<name>` 映射，只对正式缓存文件做一次存在性检查。`.part` 文件、
+   * 下载失败和未开始缓存的歌曲都不会显示标识。
+   */
+  import Badge from '@ui/components/base/Badge.svelte'
+  import Image from '@ui/components/base/Image.svelte'
+
+  // import SvgIcon from '@/components/base/SvgIcon.svelte'
+  import type { MouseEventHandler } from 'svelte/elements'
+  import { fade } from 'svelte/transition'
+  import { buildSourceLabel } from '@any-listen/common/tools'
+  import { onMount, tick } from 'svelte'
+  import { getMusicPicDelay } from '@ui/modules/player/store/actions'
+  import Btn from '@ui/components/base/Btn.svelte'
+  import SvgIcon from '@ui/components/base/SvgIcon.svelte'
+  import { useSettingValue } from '@ui/modules/setting/reactive.svelte'
+  import MusicHeartBtn from '@ui/components/common/MusicHeartBtn.svelte'
+  import { LIST_IDS } from '@any-listen/common/constants'
+  import { t } from '@/plugins/i18n'
+  import { tm } from '@porting/ui/i18n'
+  import { hasCompleteMusicCache, musicCacheStore } from '@porting/ui/musicCache'
+  // console.log(querystring)
+  let {
+    musicinfo,
+    listid,
+    index,
+    source,
+    picStyle,
+    selected,
+    selectedactive,
+    playing,
+    active,
+    oncontextmenu,
+    onclick,
+    onplay,
+  }: {
+    musicinfo: AnyListen.Music.MusicInfo
+    listid: string
+    source: AnyListen.Player.SourceType
+    index: number
+    picStyle: string
+    playing?: boolean
+    selected?: boolean
+    active?: boolean
+    selectedactive?: boolean
+    oncontextmenu?: MouseEventHandler<HTMLDivElement>
+    onclick: (isKey: boolean) => void
+    onplay?: () => void
+  } = $props()
+
+  let sourceLabel = $derived(buildSourceLabel(musicinfo))
+  let picUrl = $state<null | string>(null)
+  let hovered = $state(false)
+  let cachedFile = $state(false)
+  let cacheTask = $derived($musicCacheStore[musicinfo.id])
+  let cached = $derived(cachedFile || cacheTask?.state === 'complete')
+  let cacheProgress = $derived.by(() => {
+    if (cacheTask?.state !== 'downloading') return ''
+    if (cacheTask.total <= 0) return tm('mobile__cache_downloading_unknown')
+    return tm('mobile__cache_downloading', {
+      percent: Math.min(100, Math.round((cacheTask.downloaded / cacheTask.total) * 100)),
+    })
+  })
+  let isShowActionBtn = useSettingValue('list.isShowActionBtn')
+  // let isPlaying = $derived(isplaylist && $playInfo.index === index)
+  const badgeTypes = ['primary', 'secondary', 'tertiary'] as const
+
+  const handleClick = (event: KeyboardEvent | Event) => {
+    if ('key' in event) {
+      if (event.repeat || event.key != 'Enter') return
+      onclick(true)
+    } else {
+      onclick(false)
+    }
+  }
+
+  let cancelLoadPic: (() => void) | undefined = undefined
+  let retryedLoadPic = false
+  const loadPic = () => {
+    cancelLoadPic?.()
+    cancelLoadPic = getMusicPicDelay({ musicInfo: musicinfo, listId: listid, source, isRefresh: retryedLoadPic }, (url) => {
+      cancelLoadPic = undefined
+      void tick().then(() => {
+        picUrl = url
+      })
+    })
+  }
+
+  onMount(() => {
+    retryedLoadPic = false
+    loadPic()
+    return () => {
+      cancelLoadPic?.()
+    }
+  })
+
+  $effect(() => {
+    const musicInfo = musicinfo
+    let active = true
+    cachedFile = false
+    void hasCompleteMusicCache(musicInfo)
+      .then((value) => {
+        if (active) cachedFile = value
+      })
+      .catch((error: unknown) => {
+        if (active) console.warn(`[ui/musicCache] check failed for ${musicInfo.id}`, error)
+      })
+    return () => {
+      active = false
+    }
+  })
+</script>
+
+<div
+  class="container"
+  class:selected
+  class:active
+  class:selectedactive
+  role="button"
+  tabindex="0"
+  onkeydown={handleClick}
+  onclick={handleClick}
+  {oncontextmenu}
+  onmouseenter={() => (hovered = true)}
+  onmouseleave={() => (hovered = false)}
+>
+  <div class="pic" style={picStyle}>
+    {#if playing}
+      <div class="play-icon" transition:fade={{ delay: 200 }}>
+        <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+          <use xlink:href="#icon-play" />
+        </svg>
+      </div>
+    {/if}
+    <Image
+      src={picUrl}
+      onerror={() => {
+        picUrl = null
+        if (retryedLoadPic) return
+        retryedLoadPic = true
+        loadPic()
+      }}
+    />
+    {#if hovered}
+      <div class="num" transition:fade={{ duration: 200 }}>
+        {index + 1}
+      </div>
+    {/if}
+  </div>
+  <div class="list-item-cell auto name-cell">
+    <div class="name-left">
+      <div class="select name" aria-label={musicinfo.name}>{musicinfo.name}</div>
+      <div class="label">
+        {#each sourceLabel as label, index (index)}
+          <Badge {label} opacity={0.7} type={badgeTypes[index % badgeTypes.length]} />
+        {/each}
+        {#if cached}
+          <span class="cached-badge" title={tm('mobile__cached_offline')} aria-label={tm('mobile__cached_offline')}>
+            <span class="cached-check" aria-hidden="true"></span>
+            <span>{tm('mobile__cached')}</span>
+          </span>
+        {:else if cacheTask?.state === 'resolving' || cacheTask?.state === 'queued' || cacheProgress}
+          <span class="cache-progress-badge" aria-live="polite">
+            <span class="cache-spinner" aria-hidden="true"></span>
+            <span>
+              {cacheTask?.state === 'resolving'
+                ? tm('mobile__cache_resolving')
+                : cacheTask?.state === 'queued'
+                  ? tm('mobile__cache_queued')
+                  : cacheProgress}
+            </span>
+          </span>
+        {:else if cacheTask?.state === 'failed'}
+          <span class="cache-failed-badge" title={cacheTask.error ?? tm('mobile__cache_failed')}>
+            {tm('mobile__cache_failed')}
+          </span>
+        {/if}
+      </div>
+    </div>
+    {#if isShowActionBtn.val}
+      <div class="name-right">
+        {#if hovered}
+          <div class="auto-hide-btns" transition:fade={{ duration: 200 }}>
+            <Btn
+              onclick={(evt) => {
+                evt.stopPropagation()
+                onplay?.()
+              }}
+              min
+              icon
+              outline
+              aria-label={$t('player__play')}
+              class={['play-btn']}
+            >
+              <SvgIcon name="play" />
+            </Btn>
+          </div>
+        {/if}
+        {#if listid !== LIST_IDS.LOVE}
+          <MusicHeartBtn {musicinfo} min />
+        {/if}
+      </div>
+    {/if}
+  </div>
+  <div class="list-item-cell" style="flex: 0 0 22%;">
+    <span class="select" aria-label={musicinfo.singer}>{musicinfo.singer}</span>
+  </div>
+  <div class="list-item-cell" style="flex: 0 0 22%;">
+    <span class="select" aria-label={musicinfo.meta.albumName}>{musicinfo.meta.albumName}</span>
+  </div>
+  <div class="list-item-cell" style="flex: 0 0 9%;">
+    <span class="no-select">{musicinfo.interval || '--/--'}</span>
+  </div>
+</div>
+
+<style lang="less">
+  .container {
+    position: relative;
+    display: flex;
+    flex-flow: row nowrap;
+    gap: 10px;
+    align-items: center;
+    height: 100%;
+    padding: 5px;
+    font-size: 13px;
+    background-color: transparent;
+    border: 1px dashed transparent;
+    border-radius: @radius-border;
+    transition: 0.3s ease;
+    transition-property: color, background-color, opacity, border-color;
+    // &:hover {
+    //   .num {
+    //     opacity: 1;
+    //   }
+    // }
+
+    &:not(.active, .selected) {
+      &:hover {
+        background-color: var(--color-primary-background-hover);
+      }
+    }
+    &.selected {
+      background-color: var(--color-primary-background-selected);
+    }
+    &.active {
+      background-color: var(--color-primary-background-active);
+    }
+    &.selectedactive {
+      border-color: var(--color-primary-alpha-700);
+    }
+  }
+  // .active {
+  //   background-color: var(--color-primary-background);
+  // }
+
+  .pic {
+    position: relative;
+    flex: none;
+    overflow: hidden;
+    // background-color: var(--color-primary-light-200-alpha-900);
+    // display: flex;
+    // align-items: center;
+    // justify-content: center;
+    border-radius: @radius-border;
+    // user-select: none;
+    // flex: none;
+    // > span {
+    //   // width: 100%;
+    //   // height: 80%;
+    //   color: var(--color-primary-light-400-alpha-200);
+    //   font-size: 18px;
+    //   font-family: Consolas, 'Courier New', monospace;
+    //   span {
+    //     padding-left: 2px;
+    //   }
+    // }
+    :global(.pic) {
+      transition: opacity @transition-normal;
+    }
+  }
+  // .num {
+  //   position: absolute;
+  //   bottom: 0;
+  //   right: 0;
+  //   .nobreak;
+  //   .center;
+  //   opacity: 0;
+  //   transition: opacity .2s ease;
+  //   padding-left: 2px;
+  //   padding-right: 2px;
+  //   font-size: 11px;
+  //   line-height: 1.2;
+  //   color: var(--color-button-font);
+  //   background-color: var(--color-button-background);
+  //   border-top-left-radius: @radius-border;
+  //   border-bottom-right-radius: @radius-border;
+  // }
+  .play-icon {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    padding: 6px;
+    color: var(--color-button-font);
+
+    + :global(.pic) {
+      opacity: 0.1;
+    }
+  }
+
+  .num {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    max-width: 100%;
+    padding: 0 2px;
+    font-size: 11px;
+    line-height: 1.2;
+    color: var(--color-000);
+    user-select: none;
+    background-color: var(--color-primary-dark-800-alpha-200);
+    border-top-left-radius: @radius-border;
+  }
+
+  // .right {
+  //   flex: auto;
+  //   display: flex;
+  //   flex-flow: row nowrap;
+  //   font-size: 14px;
+  //   gap: 2px;
+  //   min-width: 0;
+  //   span {
+  //     .mixin-ellipsis-1();
+  //   }
+  // }
+
+  .list-item-cell {
+    // padding: 0 6px;
+    position: relative;
+    flex: none;
+    // transition:  0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    line-height: 16px;
+    vertical-align: middle;
+    .mixin-ellipsis-1();
+
+    &.auto {
+      flex: auto;
+    }
+
+    // .badge {
+    //   margin-left: 3px;
+    //   opacity: 0.85;
+    // }
+
+    // &.meta {
+    //   font-size: 12px;
+    //   color: var(--color-font-label);
+    // }
+  }
+  .name-cell {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .name-left {
+    display: flex;
+    flex: auto;
+    flex-flow: column nowrap;
+    align-items: flex-start;
+    // gap: 4px;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: initial;
+    white-space: initial;
+
+    > .name {
+      .mixin-ellipsis-1();
+
+      max-width: 100%;
+      padding: 2px 0;
+    }
+
+    .label {
+      display: flex;
+      flex-flow: row nowrap;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 0;
+      :global(.badge) {
+        padding: 0;
+      }
+    }
+
+    .cached-badge {
+      display: inline-flex;
+      flex: none;
+      gap: 3px;
+      align-items: center;
+      height: 15px;
+      padding: 0 5px;
+      color: var(--color-primary);
+      background-color: var(--color-primary-alpha-900);
+      border: 1px solid var(--color-primary-alpha-800);
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 13px;
+      white-space: nowrap;
+    }
+
+    .cached-check {
+      width: 5px;
+      height: 3px;
+      border-bottom: 1.5px solid currentColor;
+      border-left: 1.5px solid currentColor;
+      transform: translateY(-1px) rotate(-45deg);
+    }
+
+    .cache-progress-badge,
+    .cache-failed-badge {
+      display: inline-flex;
+      flex: none;
+      gap: 4px;
+      align-items: center;
+      height: 15px;
+      padding: 0 5px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 13px;
+      white-space: nowrap;
+    }
+
+    .cache-progress-badge {
+      color: var(--color-primary);
+      background-color: var(--color-primary-alpha-900);
+      border: 1px solid var(--color-primary-alpha-800);
+    }
+
+    .cache-failed-badge {
+      color: var(--color-danger);
+      background-color: color-mix(in srgb, var(--color-danger) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--color-danger) 24%, transparent);
+    }
+
+    .cache-spinner {
+      width: 8px;
+      height: 8px;
+      border: 1.5px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: cache-spin 0.8s linear infinite;
+    }
+  }
+  .name-right {
+    display: flex;
+    flex: none;
+    flex-flow: row nowrap;
+    gap: 4px;
+    align-items: center;
+    margin: 0 8px;
+    color: var(--color-font-label);
+
+    :global {
+      .play-btn {
+        padding: 3px;
+      }
+    }
+  }
+  .auto-hide-btns {
+    display: flex;
+    flex: none;
+    flex-flow: row nowrap;
+    gap: 4px;
+    align-items: center;
+  }
+
+  @keyframes cache-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

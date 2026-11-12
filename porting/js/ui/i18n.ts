@@ -135,6 +135,67 @@ const dict = {
     'zh-tw': '線上音源回應逾時，請檢查網路後再試',
     'en-us': 'Online source timed out. Check your network and try again.',
   },
+  mobile__cached: { 'zh-cn': '已缓存', 'zh-tw': '已快取', 'en-us': 'Cached' },
+  mobile__cached_offline: {
+    'zh-cn': '已缓存，可离线播放',
+    'zh-tw': '已快取，可離線播放',
+    'en-us': 'Cached for offline playback',
+  },
+  mobile__cache_music: {
+    'zh-cn': '缓存到本地',
+    'zh-tw': '快取到本機',
+    'en-us': 'Cache for offline',
+  },
+  mobile__cache_resolving: {
+    'zh-cn': '正在解析音源',
+    'zh-tw': '正在解析音源',
+    'en-us': 'Resolving source',
+  },
+  mobile__cache_queued: {
+    'zh-cn': '等待缓存',
+    'zh-tw': '等待快取',
+    'en-us': 'Queued',
+  },
+  mobile__cache_downloading: {
+    'zh-cn': '缓存中 {percent}%',
+    'zh-tw': '快取中 {percent}%',
+    'en-us': 'Caching {percent}%',
+  },
+  mobile__cache_downloading_unknown: {
+    'zh-cn': '缓存中',
+    'zh-tw': '快取中',
+    'en-us': 'Caching',
+  },
+  mobile__cache_failed: {
+    'zh-cn': '缓存失败',
+    'zh-tw': '快取失敗',
+    'en-us': 'Cache failed',
+  },
+  mobile__cache_retry: {
+    'zh-cn': '重试缓存',
+    'zh-tw': '重試快取',
+    'en-us': 'Retry cache',
+  },
+  mobile__cache_playlist: {
+    'zh-cn': '缓存歌单',
+    'zh-tw': '快取歌單',
+    'en-us': 'Cache playlist',
+  },
+  mobile__cache_playlist_progress: {
+    'zh-cn': '已处理 {done}/{total}',
+    'zh-tw': '已處理 {done}/{total}',
+    'en-us': '{done}/{total} processed',
+  },
+  mobile__cache_playlist_done: {
+    'zh-cn': '歌单已缓存 {total} 首',
+    'zh-tw': '歌單已快取 {total} 首',
+    'en-us': '{total} tracks cached',
+  },
+  mobile__cache_playlist_failed: {
+    'zh-cn': '失败 {num} 首 · 点击重试',
+    'zh-tw': '失敗 {num} 首 · 點擊重試',
+    'en-us': '{num} failed · Tap to retry',
+  },
   mobile__extension_settings_empty_title: {
     'zh-cn': '还没有可配置的扩展',
     'zh-tw': '還沒有可設定的擴充',

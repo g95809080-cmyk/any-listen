@@ -11,6 +11,7 @@ import com.anylisten.ports.fs.FsWatchEvent
 import com.anylisten.ports.fs.ListTreeResult
 import com.anylisten.ports.http.DownloadResult
 import com.anylisten.ports.http.HttpResponseData
+import com.anylisten.ports.http.ProxyCacheTaskStatus
 import com.anylisten.ports.media.MediaMetadataSnapshot
 import com.anylisten.ports.media.PlaybackSnapshot
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +80,14 @@ object Serialize {
     "filePath" to r.filePath,
     "size" to r.size,
     "sha256" to r.sha256,
+  )
+
+  fun proxyCacheTask(s: ProxyCacheTaskStatus): Map<String, Any?> = mapOf(
+    "name" to s.name,
+    "state" to s.state.jsName,
+    "downloaded" to s.downloaded,
+    "total" to s.total,
+    "error" to s.error,
   )
 
   fun metadata(m: MediaMetadataSnapshot?): Map<String, Any?>? = m?.let {

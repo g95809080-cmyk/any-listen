@@ -49,6 +49,7 @@ import {
   type MediaSessionPort,
   type NotificationPort,
   type PowerPort,
+  type ProxyCacheTaskStatus,
   type TarPort,
   type ThemePort,
 } from '@porting/ports/types'
@@ -97,8 +98,13 @@ export function callPort<T = unknown>(
 }
 
 /** 同步签名端口用：发出即忘，失败只记日志 */
-function fireAndForget(path: string, args: readonly unknown[] = []): void {
+function fireAndForget(
+  path: string,
+  args: readonly unknown[] = [],
+  options: { ignoreUnsupported?: boolean } = {}
+): void {
   void callPort(path, args).catch((err: unknown) => {
+    if (options.ignoreUnsupported && err instanceof PortError && err.code === 'EUNSUPPORTED') return
     console.error(`[ports] ${path} failed`, err)
   })
 }
@@ -217,6 +223,11 @@ function createHttpPort(): HttpPort {
     },
     unregisterProxyTarget(name) {
       return callPort('http.unregisterProxyTarget', [name])
+    },
+    cacheProxyTarget(name, onProgress) {
+      return callPort<ProxyCacheTaskStatus>('http.cacheProxyTarget', [name, onProgress], {
+        timeoutMs: 0,
+      })
     },
   }
 }
@@ -371,7 +382,9 @@ const notificationPort: NotificationPort = {
     fireAndForget('notification.clear')
   },
   showToast(message) {
-    fireAndForget('notification.showToast', [message])
+    // Toast 由 PlaybackService 绑定。主动缓存可以在尚未开始播放时调用，此时没有
+    // notification port 是正常生命周期状态；页面内缓存状态仍会正常更新。
+    fireAndForget('notification.showToast', [message], { ignoreUnsupported: true })
   },
   showMessageBox(key, message, options) {
     return callPort<number>('notification.showMessageBox', [
@@ -535,6 +548,7 @@ export type {
   MediaSessionPort,
   NotificationPort,
   PowerPort,
+  ProxyCacheTaskStatus,
   TarPort,
   ThemePort,
 }

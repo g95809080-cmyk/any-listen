@@ -160,6 +160,16 @@ export interface HttpResponse {
   history: string[]
 }
 
+export type ProxyCacheTaskState = 'queued' | 'downloading' | 'complete' | 'failed'
+
+export interface ProxyCacheTaskStatus {
+  name: string
+  state: ProxyCacheTaskState
+  downloaded: number
+  total: number
+  error: string | null
+}
+
 export interface HttpPort {
   request(url: string, opts: HttpRequestOptions): Promise<HttpResponse>
   downloadTo(
@@ -181,6 +191,10 @@ export interface HttpPort {
     cacheEnabled?: boolean
   ): Promise<void>
   unregisterProxyTarget(name: string): Promise<void>
+  cacheProxyTarget(
+    name: string,
+    onProgress: (status: ProxyCacheTaskStatus) => void
+  ): Promise<ProxyCacheTaskStatus>
 }
 
 /**

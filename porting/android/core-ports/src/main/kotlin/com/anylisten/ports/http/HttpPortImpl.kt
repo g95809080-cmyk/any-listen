@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
@@ -47,6 +48,7 @@ class HttpPortImpl(
   private val proxyCache = proxyCacheDir?.let { ProxyMediaCache(it) }
   private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val cacheJobs = ConcurrentHashMap<String, Job>()
+  private val cacheStates = ConcurrentHashMap<String, ProxyCacheTaskStatus>()
   private val cacheSlots = Semaphore(2)
 
   @Volatile private var appProxy: ProxySpec? = null
@@ -199,28 +201,33 @@ class HttpPortImpl(
       var downloaded = 0L
       var lastReport = 0L
       var lastBytes = 0L
-      tmp.outputStream().use { output ->
-        response.body?.byteStream()?.use { input ->
-          val buffer = ByteArray(BUFFER_SIZE)
-          while (true) {
-            val read = input.read(buffer)
-            if (read <= 0) break
-            output.write(buffer, 0, read)
-            digest.update(buffer, 0, read)
-            downloaded += read
-            val now = System.currentTimeMillis()
-            if (now - lastReport >= PROGRESS_INTERVAL_MS) {
-              val speed = ((downloaded - lastBytes) * 1000f / (now - lastReport).toFloat()).toLong()
-              onProgress(DownloadProgress(downloaded, total, speed))
-              lastReport = now
-              lastBytes = downloaded
+      try {
+        tmp.outputStream().use { output ->
+          response.body?.byteStream()?.use { input ->
+            val buffer = ByteArray(BUFFER_SIZE)
+            while (true) {
+              val read = input.read(buffer)
+              if (read <= 0) break
+              output.write(buffer, 0, read)
+              digest.update(buffer, 0, read)
+              downloaded += read
+              val now = System.currentTimeMillis()
+              if (now - lastReport >= PROGRESS_INTERVAL_MS) {
+                val speed = ((downloaded - lastBytes) * 1000f / (now - lastReport).toFloat()).toLong()
+                onProgress(DownloadProgress(downloaded, total, speed))
+                lastReport = now
+                lastBytes = downloaded
+              }
             }
           }
         }
-      }
-      if (!tmp.renameTo(dest)) {
-        tmp.copyTo(dest, overwrite = true)
+        if (!tmp.renameTo(dest)) {
+          tmp.copyTo(dest, overwrite = true)
+          tmp.delete()
+        }
+      } catch (e: Throwable) {
         tmp.delete()
+        throw e
       }
       onProgress(DownloadProgress(downloaded, total, 0))
       DownloadResult(
@@ -280,6 +287,44 @@ class HttpPortImpl(
     proxyTargets.remove(name)
   }
 
+  override suspend fun cacheProxyTarget(
+    name: String,
+    onProgress: (ProxyCacheTaskStatus) -> Unit,
+  ): ProxyCacheTaskStatus {
+    val cache = proxyCache
+      ?: return failedCacheStatus(name, "proxy cache is unavailable").also(onProgress)
+
+    if (cache.find(name) != null) {
+      return ProxyCacheTaskStatus(name, ProxyCacheState.COMPLETE).also(onProgress)
+    }
+
+    val target = proxyTargets[name]
+      ?: return failedCacheStatus(name, "proxy target not registered").also(onProgress)
+    val job = scheduleCacheDownload(name, target)
+    if (job == null) {
+      return if (cache.find(name) != null) {
+        ProxyCacheTaskStatus(name, ProxyCacheState.COMPLETE).also(onProgress)
+      } else {
+        failedCacheStatus(name, "invalid cache target").also(onProgress)
+      }
+    }
+
+    cacheStates[name]?.let(onProgress)
+    while (job.isActive) {
+      delay(CACHE_STATUS_POLL_MS)
+      cacheStates[name]?.let(onProgress)
+    }
+    job.join()
+
+    val final = cacheStates[name] ?: if (cache.find(name) != null) {
+      ProxyCacheTaskStatus(name, ProxyCacheState.COMPLETE)
+    } else {
+      failedCacheStatus(name, "cache task ended without a complete file")
+    }
+    onProgress(final)
+    return final
+  }
+
   private fun cacheFullResponse(name: String, response: HttpResponseData) {
     val cache = proxyCache ?: return
     if (cache.find(name) != null) return
@@ -293,15 +338,22 @@ class HttpPortImpl(
     if (!installed) Log.w(TAG, "media cache install failed: $name")
   }
 
-  private fun scheduleCacheDownload(name: String, target: ProxyTarget) {
-    val cache = proxyCache ?: return
-    val destination = cache.destination(name) ?: return
-    if (cache.find(name) != null || cacheJobs.containsKey(name)) return
+  private fun scheduleCacheDownload(name: String, target: ProxyTarget): Job? {
+    val cache = proxyCache ?: return null
+    val destination = cache.destination(name) ?: return null
+    if (cache.find(name) != null) {
+      cacheStates[name] = ProxyCacheTaskStatus(name, ProxyCacheState.COMPLETE)
+      return null
+    }
+    cacheJobs[name]?.let { return it }
+
+    cacheStates[name] = ProxyCacheTaskStatus(name, ProxyCacheState.QUEUED)
 
     lateinit var job: Job
     job = cacheScope.launch(start = CoroutineStart.LAZY) {
       try {
-        cacheSlots.withPermit {
+        val result = cacheSlots.withPermit {
+          cacheStates[name] = ProxyCacheTaskStatus(name, ProxyCacheState.DOWNLOADING)
           downloadTo(
             url = target.url,
             destPath = destination.absolutePath,
@@ -309,20 +361,42 @@ class HttpPortImpl(
             timeoutMs = CACHE_DOWNLOAD_TIMEOUT_MS,
             proxy = null,
             signalId = null,
-            onProgress = {},
+            onProgress = { progress ->
+              cacheStates[name] = ProxyCacheTaskStatus(
+                name = name,
+                state = ProxyCacheState.DOWNLOADING,
+                downloaded = progress.downloaded,
+                total = progress.total,
+              )
+            },
           )
         }
+        cacheStates[name] = ProxyCacheTaskStatus(
+          name = name,
+          state = ProxyCacheState.COMPLETE,
+          downloaded = result.size,
+          total = result.size,
+        )
       } catch (e: Throwable) {
         if (e !is kotlinx.coroutines.CancellationException) {
           Log.w(TAG, "media cache download failed: $name (${e.message})")
+          cacheStates[name] = failedCacheStatus(name, e.message ?: "download failed")
         }
       } finally {
         cacheJobs.remove(name, job)
       }
     }
     val previous = cacheJobs.putIfAbsent(name, job)
-    if (previous == null) job.start() else job.cancel()
+    if (previous == null) {
+      job.start()
+      return job
+    }
+    job.cancel()
+    return previous
   }
+
+  private fun failedCacheStatus(name: String, error: String): ProxyCacheTaskStatus =
+    ProxyCacheTaskStatus(name, ProxyCacheState.FAILED, error = error)
 
   private fun isFullResponse(response: HttpResponseData): Boolean {
     if (response.statusCode != 200 && response.statusCode != 206) return false
@@ -407,6 +481,7 @@ class HttpPortImpl(
   private companion object {
     const val DEFAULT_TIMEOUT_MS = 30_000L
     const val CACHE_DOWNLOAD_TIMEOUT_MS = 5 * 60_000L
+    const val CACHE_STATUS_POLL_MS = 200L
     const val PROGRESS_INTERVAL_MS = 200L
     const val BUFFER_SIZE = 64 * 1024
     /** 超过 4MB 不内联返回（避免 JS 侧一次性持有几十 MB 的 base64） */

@@ -106,6 +106,12 @@ const OVERRIDES = {
   // `/online?t=search&q=…`（不是 `/search`），前置条件是先装扩展。
   'view-main/src/components/common/MusicList/List/index.svelte':
     'ui/overrides/components/common/MusicList/List/index.svelte',
+  // 在线歌曲完整缓存后，在来源/音质标签后补一个可离线播放标识。
+  'view-main/src/components/common/MusicList/List/ListItem.svelte':
+    'ui/overrides/components/common/MusicList/List/ListItem.svelte',
+  // 长按歌曲菜单增加主动缓存；复用播放自动缓存的代理文件与原生任务。
+  'view-main/src/components/common/MusicList/List/Menu.svelte':
+    'ui/overrides/components/common/MusicList/List/Menu.svelte',
   // 搜索页的在线列表没有上游 `playOnlineList()` 所支持的 `songlist` / `topSongs`
   // 后台补全接口；搜索结果是快照，直接建立队列即可。其余来源继续走上游实现。
   'view-main/src/components/common/MusicList/List/action':
@@ -223,6 +229,10 @@ const OVERRIDES = {
   // `ReferenceError`，会让 core.worker 启动失败、UI 永久卡在 Loading。改成 fetch 静态资源。
   // 说明见 host/app/modules/extension/index.ts 的文件头。
   'web-server/src/app/modules/extension/index': 'host/app/modules/extension/index.ts',
+  // 提供一个只读 IPC：按歌曲查找已有 `music_url` 映射，供列表判断正式缓存文件是否存在。
+  // 上游现有 `getMusicUrl` 在未命中时还会向音源取流，不能用于列表探测。
+  'web-server/src/app/renderer/winMain/rendererEvent/music':
+    'host/app/renderer/winMain/rendererEvent/music.ts',
 }
 
 /**

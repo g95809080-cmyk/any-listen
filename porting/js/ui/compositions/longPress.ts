@@ -101,7 +101,10 @@ export function installLongPressContextMenu(options: LongPressOptions = {}): () 
   function onClickCapture(event: MouseEvent): void {
     if (!swallowClick) return
     swallowClick = false
-    event.stopPropagation()
+    // `stopPropagation()` 只阻止事件继续冒泡，不能阻止同一元素上的其他监听器。
+    // 上游弹层也在 document capture 阶段监听 click 以处理“点外部关闭”；若长按结束后的
+    // 合成 click 仍到达它，菜单位于手指上方时会在用户抬起手指的瞬间被关闭。
+    event.stopImmediatePropagation()
     event.preventDefault()
   }
 

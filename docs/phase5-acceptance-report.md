@@ -1629,3 +1629,204 @@ APK 安装后使用系统默认图标。Manifest 的 `<application>` 只有 `lab
 - Xiaomi 2211133C / Android 16 覆盖安装后，系统「应用信息」页显示蓝底白色波形图标；返回桌面后，启动器图标同样已刷新。截图见 `artifacts/launcher-icon-app-info.png`、`artifacts/launcher-icon-home-check.png`。
 - `:app:assembleDebug -PskipWeb=true -PrequireWeb=true` 为 `BUILD SUCCESSFUL`；APK 为 20,370,123 B，构建时间 2026-11-06 16:42:46 +08:00，SHA-256 `0E6738230118BA4CC97CB702E2281624CDE1C0988D28B9BA81BFAFD1F93D3100`；真机 `lastUpdateTime` 为 16:43:15。
 - 本轮只改 Android 资源与 Manifest，不改 JS、`source/` 或播放逻辑。
+
+---
+
+## 32. 在线播放增强候选验收（`android.2`，2026-11-11）
+
+本轮承接在线歌曲缓存、列表“已缓存”标识、播放淡入淡出、媒体通知封面与前台服务四项改动，并把本地 Debug 候选从 `1.0.0-android.1` 提升为 `1.0.0-android.2`。`source/` 保持干净；本轮只重建和验收 Debug APK，未创建 Release，也未发布 GitHub Release。
+
+### 32.1 候选产物与设备一致性
+
+| 项 | 值 |
+|---|---|
+| APK | `porting/android/app/build/outputs/apk/debug/app-debug.apk` |
+| 版本 | `versionCode=2` / `versionName=1.0.0-android.2` |
+| 大小 | 20,996,093 B |
+| 构建时间 | 2026-11-11 16:54:09 +08:00 |
+| SHA-256 | `E56261B5086977E568F94B75FC287EC338AC564D02C5E19609EF50298DF02DC6` |
+| LX 扩展 | `artifacts/lx-loader/lx-api-source-loader-android_0.1.7-android.2.alix` |
+| 扩展指纹 | 194,364 B / SHA-256 `93C458ECB85CF19483F05705DF3CF57AB7D4ADC7DF62052D5158A236097E5D49` |
+| 模拟器 | `emulator-5568`，API 36，x86_64 |
+
+APK 使用 `adb install -r` 覆盖安装成功，原有曲库、设置、扩展和缓存均保留。设备 `base.apk` 的 SHA-256 与小写形式 `e56261b5086977e568f94b75fc287ec338ac564d02c5e19609ef50298df02dc6` 一致。工作区没有生成 `app-release.apk`。
+
+### 32.2 构建与静态门禁
+
+- 加入缓存标识后重新执行 `pnpm typecheck`，移植层 strict 检查为 0 错误；`pnpm build:all` 生成 SPA、5 个 worker、`extension-preload` 并完成 `shrink-assets`。
+- `check-webdist.mjs --assets` 为 `VERDICT: OK`，入口为 `main.BA_Aindu.js`，扩展 worker 为 `ext.worker-CIlBBYd0.js`；`index.html`、主入口和 `extension-preload` 在 `dist` 与 APK assets 之间的 SHA-1 三项全等。
+- `:bridge:testDebugUnitTest :core-ports:testDebugUnitTest` 在 ASCII 临时副本中为 `BUILD SUCCESSFUL`；覆盖 `ProxyMediaCacheTest` 和 `HttpPortCacheIntegrationTest`。
+- LX 扩展自身 `pnpm typecheck`、`pnpm test`、`pnpm build` 通过。`android.2` 包重复导入回归连续 10 轮通过：每轮 24 个重复源加 1 个合成坏源，更新成功、保留 24 个源、仅启用 `gdstudio音乐源`，耗时 44.0–45.6 秒；未出现 `JS_FreeRuntime`、断言失败或致命异常。明细见 `artifacts/qa-lx-repeat-result.txt`。
+- 本轮版本号只改变 Android 清单中的 `versionCode/versionName`；完成后执行 `:app:assembleDebug -PskipWeb=true -PrequireWeb=true`，结果为 `BUILD SUCCESSFUL`。
+
+### 32.3 在线搜索与真实播放
+
+- 安装并启用 `Online Metadata 0.4.8` 与 LX 加载器后，在线搜索 `hello` 返回 8 条歌曲。首条为 `Hello kg HR Adele 04:55`。
+- 用 CDP 真实指针点击首条歌曲后，`HTMLAudioElement` 进入播放：`paused=false`、`readyState=4`、`duration=295.549388`，4 秒采样时 `currentTime=4.854404`。
+- 网络探针确认音源响应为 HTTP `206`，`Content-Type: audio/mpeg; charset=UTF-8`，`Content-Range: bytes 0-4729251/4729252`，`Content-Length: 4729252`。
+- 页面异常计数为 0；新包回归期间 logcat 未出现 `FATAL EXCEPTION`、`ANR`、`JS_FreeRuntime`、断言失败或未捕获 `TypeError`。
+
+### 32.4 播放淡入淡出
+
+新包实测初始音量为 `1`。点击 MiniPlayer 暂停后：
+
+- 音量在约 221 ms 内由 `1` 线性降至 `0`；
+- 音量归零后才进入 `paused=true`；
+- 再次播放后约 347 ms 恢复到 `1`；
+- 播放位置保持连续：暂停前 19.835 秒，暂停点为 20.169 秒，恢复后继续推进到 21.221 秒；
+- CDP 页面异常计数为 0。
+
+明细见 `artifacts/qa-current-fade-result.json`。
+
+### 32.5 完整缓存、断网冷启动与列表标识
+
+目标歌曲完整落盘为 `files/cache/proxy/02565cffb6eb1b20fa94f4f63f34a8167aaeee8dcdf90b2c22f1f32cbd290d83.mp3`，大小 4,729,252 B，与源站 `Content-Length` 一致。随后执行以下受控步骤：
+
+1. 开启飞行模式，确认 `Active default network: none`；
+2. 强制停止并冷启动 `1.0.0-android.2`；
+3. 从持久化播放项点击 MiniPlayer 的 `Play`；
+4. 等待 3 秒并再次采样音频状态。
+
+结果：`currentSrc` 指向本地 `/api/p_static/...`，`paused=false`、`readyState=4`、`duration=295.549388`；播放时间从 4.047690 秒推进到 7.234839 秒，增加 3.187 秒，页面异常为 0。该结果证明缓存能跨进程命中，不依赖当前进程内内存状态。完整记录见 `artifacts/qa-current-offline-result.json`。
+
+断网冷启动时，歌曲封面 URL 无法联网获取，因此这一轮通知可能暂不显示封面；音频缓存本身完整可用。此边界已写入 README。
+
+随后列表增加了只读缓存标识。界面从已有 `music_url` 映射中提取 `/p_static/<name>`，覆盖歌曲当前音质和所有已登记音质，只对代理缓存目录中的正式文件执行 `stat`。只有存在且长度大于 0 的完整文件才显示标识；`.part`、失败任务和仅有的 Range 片段都不会显示。点击音源或列表不会因探测而触发额外取流。
+
+API 36 模拟器实测：
+
+- `Hello kg HR Cached Adele 04:55` 显示标识，文本为 `Cached`，`title` 和 `aria-label` 均为 `Cached for offline playback`；
+- 同一列表的未缓存对照 `Hello! kg SQ Super Simple Songs 01:18` 不显示标识；
+- 临时移走 4,729,252 B 的正式缓存文件后重新搜索，目标行变为 `Hello kg HR Adele 04:55`，标识数量为 0；
+- 恢复正式文件后再次搜索，目标标识重新出现；
+- 三种状态下 CDP 页面异常均为 0，logcat 未出现缓存检查失败、`FATAL EXCEPTION`、`ANR`、`JS_FreeRuntime`、断言失败或 `Uncaught TypeError`。
+
+完整记录见 `artifacts/qa-cache-badge-result.json`，界面预览见 `artifacts/qa-cache-badge-preview-final.png`。模拟器系统 `screencap` 在当前图形后端持续返回黑帧，因此本轮以 WebView DOM、可访问性属性和状态切换探针作为界面验收证据。
+
+### 32.6 后台播放、前台通知与媒体控制
+
+- 返回桌面后 2 秒，播放时间从 37.765498 秒推进到 40.003686 秒，增加 2.238 秒。
+- `dumpsys activity services` 显示 `PlaybackService` 的 `isForeground=true`、`foregroundId=1001`，前台类型包含 `mediaPlayback`。
+- `dumpsys media_session` 显示 `AnyListenSession` 为 `PLAYING(3)`，metadata 为 `Hello, Adele, Hello`，封面加载后 metadata 大小为 8。
+- 通知 ID 为 `1001`，channel 为 `anylisten.playback`，flags 包含 `ONGOING_EVENT|FOREGROUND_SERVICE`，模板为 `Notification$MediaStyle`，标题为 `Hello`、正文为 `Adele`，大图为 `125×125`，有上一首、暂停/播放、下一首三个 action。
+- 通过系统媒体会话暂停后等待 6 秒，状态保持 `PAUSED(2)`，通知仍在，`MediaStyle`、标题、正文和 `125×125` 大图均保留。
+- 再通过媒体会话恢复后，播放时间从 40.614959 秒推进到 44.893104 秒，增加 4.278 秒。
+- 完整结果见 `artifacts/qa-current-lifecycle-result.json`。
+
+### 32.7 交付边界
+
+- 当前已验证的是 API 36 模拟器上的 `android.2` Debug 候选。Xiaomi Android 16 真机的既有结论来自上一候选基线，不能替代本轮版本的再次真机安装。
+- 24 个 LX 源已经通过批量导入、覆盖更新和重复导入稳定性验证；播放能力只抽测了当前可用的 `gdstudio音乐源`，不代表 24 个第三方源逐个可播。
+- 模拟器未评估扬声器音质、蓝牙、耳机键和锁屏长时播放；这些只验证了系统状态、时长推进和媒体控制，不能据此给出音质结论。
+- 公开 Release 仍为 `v1.0.0-android.1`，不含本轮四项增强；`android.2` 仍是本地候选，后续发布时需要重新生成 Release APK、校验 R8 产物并创建新 Release。
+
+---
+
+## 33. 主动单曲缓存与歌单缓存验收（`android.3`，2026-11-11）
+
+本轮在已有的播放自动缓存、离线标识和媒体通知基础上，增加了用户可主动触发的单曲缓存与歌单缓存队列。候选版本提升到 `1.0.0-android.3`；`source/` 保持干净，本轮只构建和验收 Debug APK，没有创建 Release。
+
+### 33.1 候选产物与设备一致性
+
+| 项 | 值 |
+|---|---|
+| APK | `porting/android/app/build/outputs/apk/debug/app-debug.apk` |
+| 版本 | `versionCode=3` / `versionName=1.0.0-android.3` |
+| 大小 | 20,536,199 B |
+| 构建时间 | 2026-11-11 18:27:05 +08:00 |
+| SHA-256 | `B6F4080A882CC0D3964384FB558996214FEB5B29F2B25B380E795B85D3979CE0` |
+| LX 扩展 | `artifacts/lx-loader/lx-api-source-loader-android_0.1.7-android.2.alix` |
+| 扩展指纹 | 194,364 B / SHA-256 `93C458ECB85CF19483F05705DF3CF57AB7D4ADC7DF62052D5158A236097E5D49` |
+| 模拟器 | `emulator-5554`，API 36，x86_64 |
+| 真机 | Xiaomi 2211133C，Android 16 / API 36，`arm64` |
+
+APK 使用 `adb install -r` 覆盖安装成功，原曲库、设置、扩展和缓存目录均保留。模拟器任务显示版本为 `versionCode=3` / `versionName=1.0.0-android.3`；设备内 `base.apk` 的 SHA-256 与小写形式 `b6f4080a882cc0d3964384fb558996214feb5b29f2b25b380e795b85d3979ce0` 一致。
+
+### 33.2 实现范围
+
+- 新增原生 `http.cacheProxyTarget(name, onProgress)`：按 `/p_static/<name>` 补齐正式缓存文件，状态依次为 `queued`、`downloading`、`complete`、`failed`。
+- 主动缓存与播放触发的自动缓存复用同一原生任务表和 `ProxyMediaCache`，同一文件不会重复下载；全局同时最多下载 2 首。
+- 下载先写 `.part`，完整结束后再原子改名；失败会删除临时文件并返回错误。
+- 在线歌曲长按菜单增加“缓存到本地 / 重试缓存”；歌曲行显示解析、排队、百分比、已缓存或失败状态。
+- 在线列表顶部增加“缓存歌单”，最多两个 worker，已缓存项直接跳过，单项失败不终止队列；结束后只重试失败项。
+- 本轮只缓存当前页面已加载的歌曲，不保存远程歌单结构；排队状态按当前进程内存管理。
+- 长按抬手产生的合成 click 使用 `stopImmediatePropagation()` 消费，避免低位歌曲菜单刚出现就被“点击空白处关闭”监听器关闭。
+
+### 33.3 构建与静态门禁
+
+- `pnpm typecheck`：移植层 strict 检查 0 错误。
+- `pnpm build:all`：SPA、5 个 worker、`extension-preload` 和 `shrink-assets` 全部成功。
+- `pnpm smoke`：产物、worker 引用、QuickJS、Ports、SQLite、缓存代理和扩展回调检查全部通过。
+- `check-webdist.mjs --assets --dist=../../artifacts/qa-build-android3-final-20261111`：`VERDICT: OK`；最终入口为 `main.Ye8saDPW.js`，5 个 worker 全部存在，`dist` 与 APK assets 的 `index.html`、`main.Ye8saDPW.js`、`extension-preload.js` 三项 SHA-1 全等。
+- `:bridge:testDebugUnitTest :core-ports:testDebugUnitTest`：`BUILD SUCCESSFUL`；其中 `HttpPortCacheIntegrationTest` 覆盖完整缓存、进度回报、复用已有文件和源站关闭后的 Range 响应。
+- 未播放时触发 Toast 不再把 `notification port is not bound yet` 打印成页面错误；主动缓存结果仍通过行内状态和歌单状态条反馈。
+
+### 33.4 单曲主动缓存
+
+在 `Hello` 搜索结果第 3 页长按 `Hello kg HR Kelly Clarkson 02:59`，选择 `Cache for offline`。页面状态依次出现 `Resolving source`、`Queued`、`Caching 67%`、`Cached`，完成后正式文件为：
+
+```text
+files/cache/proxy/cc157211f0a4218aa791d3dd498e607843338d97382edd22dc0ee8e7d33da2cd.mp3
+2,873,513 B
+```
+
+再次长按同一歌曲时，菜单项为禁用的 `Cached`。最终包在冷启动、列表完成缓存文件探测后直接长按该歌曲，菜单仍立即显示禁用的 `Cached`，页面异常和 Toast port 错误均为 0。下载期间出现 `.part`，完成后删除。明细见 `artifacts/qa-active-final-single-success.json` 和 `artifacts/qa-active-final2-cached-menu.json`。
+
+失败路径使用无匹配音源的歌曲验证。页面从 `Resolving source` 进入 `Cache failed`，应用保持可操作，没有页面异常或进程崩溃；随后歌单队列仍能继续处理其他歌曲。明细见 `artifacts/qa-active-final-single-failure.json`。
+
+### 33.5 歌单缓存、失败隔离与重试
+
+以 20 首 `hello` 搜索结果执行“缓存歌单”：
+
+- 队列进入活动态时显示 `19/20 processed` 和“下载中 1”；
+- 19 首已完成，第三方音源无法解析 1 首时状态条显示 `Retry cache` 和“失败 1 首”；
+- 失败歌曲行显示 `Cache failed`，其余缓存歌曲显示 `Cached`；
+- 点击 `Retry cache` 后只重新处理失败项，状态从 `0/1` 继续到同一失败结果，队列没有卡死；
+- 最终缓存目录有 38 个正式 `.mp3` 文件、0 个残留 `.part`，其中包含上述单曲和此前完整落盘的 `e149…mp3`。
+
+明细见 `artifacts/qa-active-final-playlist.json`、`artifacts/qa-active-final-playlist-retry.json`。最终预览图仍使用用户已确认的 `artifacts/qa-active-cache-preview.png`；模拟器 `screencap` 仍返回黑帧，因此界面状态以 CDP DOM、可访问性属性和真实计数为验收证据。
+
+### 33.6 断网与跨进程播放
+
+先用在线搜索选择 `Hello kg SQ 黄龄 03:48`，确认音频使用本地代理地址 `e1493bc8ef4a2f305e26c92d728a8a8794d4de16c3915adf675a5ddcf5ffea2b.mp3`。该文件大小 4,859,237 B。
+
+随后执行：
+
+1. 强制停止应用；
+2. 开启飞行模式，确认 `Active default network: none`；
+3. 冷启动 `android.3`，进程 PID 从 1868 变为 2224；
+4. 从保留的 MiniPlayer 播放项恢复播放。
+
+结果：`currentSrc` 指向 `/api/p_static/e1493bc8…mp3`，`readyState=4`，`duration=303.673469`；3 秒后播放时间从 0.831028 秒推进到 3.886466 秒，页面异常为 0。明细见 `artifacts/qa-active-final-offline-result.json`。
+
+### 33.7 后台播放、通知和媒体控制
+
+- 返回桌面后界面为 `visibility=hidden`，播放时间从 36.015017 秒推进到 40.483034 秒，增加 4.468 秒。
+- `dumpsys activity services` 显示 `PlaybackService` 的 `isForeground=true`、`foregroundId=1001`，前台类型包含 `mediaPlayback`。
+- 媒体键暂停后等待 7 秒，音频保持 `paused=true`，音量淡出到 0；`MediaStyle` 通知和 `AnyListenSession` 仍保留。
+- 媒体键恢复后 `volume=1`、`paused=false`，播放时间继续推进到 56.301172 秒。
+- 最终包再次通过媒体键从 `PAUSED` 恢复为 `PLAYING`，随后暂停并等待 7 秒；`AnyListenSession` 保持活动，`MediaStyle` 通知、3 个媒体 action 和前台服务均未消失，通知进度停在 33.074 秒。
+- 切回有封面的 `Hello - Adele` 后，通知保持 `FOREGROUND_SERVICE|ONGOING_EVENT`，标题为 `Hello`、正文为 `Adele`，模板为 `Notification$MediaStyle`，三个媒体 action 均存在，大图为 `BITMAP 125×125`。
+- 断网冷启动后的 `Hello - 黄龄` 若尚未取得封面，通知大图为空；音频缓存和媒体控制不受影响。
+
+证据见 `artifacts/qa-active-final-background-before.json`、`artifacts/qa-active-final-background-after.json`、`artifacts/qa-active-final-service-playing.txt`、`artifacts/qa-active-final-media-playing.txt`、`artifacts/qa-active-final-notification-paused.txt`、`artifacts/qa-active-final2-media-repaused.txt`、`artifacts/qa-active-final2-notification-repaused.txt`、`artifacts/qa-active-final2-service-repaused.txt` 和 `artifacts/qa-final-cover-notification.txt`。
+
+### 33.8 真机覆盖安装（2026-11-12）
+
+手机开启无线调试后，ADB 自动发现地址 `192.168.1.39:37927`。最终 Debug APK 使用 `adb install -r` 覆盖安装成功，原有 12 个歌单和设置均保留。
+
+- `versionCode=3` / `versionName=1.0.0-android.3`，系统记录的 `lastUpdateTime` 为 2026-11-12 09:39:49。
+- 设备内 `base.apk` SHA-256 为 `b6f4080a882cc0d3964384fb558996214feb5b29f2b25b380e795b85d3979ce0`，与本地最终 APK 一致。
+- 强制停止后冷启动成功，`am start -W` 为 `LaunchState: COLD`、`TotalTime: 2181 ms`；首屏正常显示曲库和 12 个歌单。
+- 在线搜索 `hello` 后，真机页面显示“缓存歌单”和“仅缓存当前已加载歌曲”，CDP 页面异常为 0。
+- 长按 Adele《Hello》后菜单显示“缓存到本地”；实际触发后约 12 秒完成，歌曲行显示“已缓存”，再次长按显示禁用的“已缓存”。
+- 新缓存文件为 `files/cache/proxy/86450ad6e7e83c0177a63a342bd06c8cdae571334538b5fba58a7e84a6004b93.mp3`，大小 11,823,064 B；当前缓存目录共 76 个正式文件、0 个 `.part`。
+- 真机证据为 `artifacts/qa-android3-phone-current.png`、`qa-android3-phone-menu.png`、`qa-android3-phone-cached.png`、`qa-android3-phone-search.json`、`qa-android3-phone-cache-final.json` 和 `qa-android3-phone-cached-menu.json`。
+
+### 33.9 交付边界
+
+- 模拟器在 `android.3` 验收期间无 `FATAL EXCEPTION`、`ANR`、`JS_FreeRuntime` 或断言失败，crash buffer 为空。
+- 最终 Debug 包已覆盖安装到 API 36 模拟器和 Xiaomi Android 16 真机；真机首屏、在线搜索、长按缓存和“已缓存”状态已复验，双并发歌单、断网冷启动和后台通知的完整路径仍以模拟器结果为主。
+- 本轮没有评估扬声器音质、蓝牙、耳机键或长时间厂商省电策略，只验证播放状态、时长推进、缓存命中和系统控制。
+- 24 个 LX 源已通过覆盖更新和重复导入稳定性回归；实际播放仍只抽测 `gdstudio音乐源`，不代表 24 个第三方源逐个可播。
+- 公开 Release 仍为 `v1.0.0-android.1`，不含主动缓存和歌单队列；`android.3` 是本地 Debug 候选，`app-release.apk` 尚未重建。

@@ -165,9 +165,11 @@ PowerShell 同参数：`./scripts/deploy.ps1 [-Build] [-Clear] [-Loose] [-NoLog]
 - **`--build` 是安全的路径**：它让**同一次** Gradle 调用里先跑完 `pnpm build:all`、再 `syncWebAssets`，
   天然不会踩到并发构建的坑（这也是当前 fullstack 还在改 UI 时推荐的装机方式）。
 
-> 当前设备状态：APK 曾安装成功（`Performing Streamed Install / Success`），
-> 但随后设备变为 `offline`（`cannot connect to 192.168.1.16:43305: ... (10060)`），
-> **首屏渲染、Range 拖动、后台播放、通知栏按钮均未在真机上验证**（见 §7.1）。
+> 当前设备状态：`1.0.0-android.3` Debug 候选已覆盖安装到 API 36 模拟器和
+> Xiaomi 2211133C / Android 16 真机。模拟器完成首屏、在线搜索与播放、Range 取流、
+> 主动单曲缓存、双并发歌单队列、失败隔离与重试、列表“已缓存”标识、断网冷启动、
+> 后台播放、通知与媒体控制验收；真机完成首屏、在线搜索、长按主动缓存和“已缓存”状态验收。
+> `app-release.apk` 尚未随本轮重建。
 
 ### ⚠️ 不要和 `pnpm build:all` 并发构建
 
@@ -521,7 +523,7 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
 
 ## 7. 已知限制
 
-1. **无真机验证**。开发环境没有连接设备（`adb devices` 为空），APK 只验证了 `assembleDebug` 通过、assets 层级与体积，**未在真机/模拟器上跑过首屏与播放链路**。首次装机后要重点看：流媒体 Range 拖动、后台播放存活、通知栏按钮、外置存储授权。
+1. **覆盖范围仍有限**。当前 `android.3` Debug 候选已在 API 36 模拟器完成主要路径验收；Xiaomi 2211133C / Android 16 的既有结论来自上一候选基线，尚需用新包复验。Android 10–15、横屏、平板、折叠屏、外接指针和长时间省电策略尚未系统覆盖。`app-release.apk` 的 R8 产物也未随本轮重建。
 2. **媒体栈选 `MediaSessionCompat` 而非 Media3**。Media3 `MediaSession` 必须绑定 `Player`，用 `SimpleBasePlayer` 伪装时单 item playlist 会导致通知栏「上一首/下一首」按钮不出现；而实际播放器是 Web Audio，没有 ExoPlayer 实例可绑。`MediaSessionCompat` 可以只声明 actions 不绑 player，正好匹配本架构。
 3. **`saveDocument` 已改成原生自写闭合，但仍有一个分支要调用方配合**。
    `DocumentPicker.saveDocument(suggestName, mime, source: SaveSource?)` 现在接收 `Bytes(ByteArray)` 或 `File(path)`，
@@ -549,7 +551,7 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
    附带教训：`syncWebAssets` 把 `dist` 根**拍平**拷贝，JS 侧曾把旧产物改名成 `dist/spa.old.<ts>`，
    26 MB 垃圾进了 APK。现已按 `**/*.old.*`、`.trash/**` 挡住，并在构建日志里告警 `dist` 根的异常条目（见 §2）。
 8. **APK 里有约 4 MB 的 worker 重复 chunk**。`vite` 的每个 Web Worker 都是独立 rollup 构建，主图与 worker 图会各自 emit 一份内容相同的共享 chunk（`core-*`/`index-*`/各 parser）。Vite 正常行为，要瘦身得 JS 侧做「同内容去重 + 引用改写」；原生侧不改 hash 引用（改了必然 404）。
-9. **`backgroundAudio` 能力标记为 `"unverified"`**。后台音频能否在目标机型上稳定存活（厂商省电策略差异大）没实测，不敢先写 `true` 让前端乐观分支。
+9. **`backgroundAudio` 能力标记仍为 `"unverified"`**。API 36 模拟器和 Xiaomi Android 16 已完成短时后台播放与通知控制验证，但尚未覆盖各厂商长时间省电策略，因此不把标记提前改成 `true`。
 10. **`listTree` 大目录性能未压测**。已按「原生递归 + 500 条一批 + 逐批可取消」实现（1 万首歌不再 2 万次往返），但真实曲库规模下的耗时与内存占用尚无基准数据。
 11. **明文流量按扩展实际域名精确放行**。`usesCleartextTraffic="true"` 已删除，默认只放行
     `127.0.0.1` / `localhost` 和 `Online Metadata 0.4.8` 实际使用的 34 个主机名；其余域名一律禁明文

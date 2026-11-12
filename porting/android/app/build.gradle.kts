@@ -13,8 +13,8 @@ android {
     applicationId = "com.anylisten.android"
     minSdk = 29
     targetSdk = 35
-    versionCode = 1
-    versionName = "1.0.0-android.1"
+    versionCode = 3
+    versionName = "1.0.0-android.3"
 
     // PDR-008：仅 arm64-v8a（用户自用机为骁龙 8 Gen2）。多 ABI 只会让包体翻倍。
     ndk {

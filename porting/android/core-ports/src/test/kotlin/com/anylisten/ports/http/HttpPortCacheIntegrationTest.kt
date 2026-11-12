@@ -99,6 +99,41 @@ class HttpPortCacheIntegrationTest {
     }
   }
 
+  @Test
+  fun `active cache request reports progress and reuses complete file`() = runBlocking {
+    val media = ByteArray(1024 * 256) { (it % 251).toByte() }
+    val cacheDir = temporaryFolder.newFolder("active-proxy")
+    val source = RangeServer(media)
+    val port = HttpPortImpl(
+      tempDir = temporaryFolder.newFolder("active-http"),
+      userAgent = "AnyListenTest",
+      proxyCacheDir = cacheDir,
+    )
+    try {
+      port.registerProxyTarget(
+        name = "active.mp3",
+        url = source.url,
+        headers = emptyMap(),
+      )
+
+      val updates = mutableListOf<ProxyCacheTaskStatus>()
+      val completed = port.cacheProxyTarget("active.mp3") { updates += it }
+
+      assertEquals(ProxyCacheState.COMPLETE, completed.state)
+      assertEquals(media.size.toLong(), completed.downloaded)
+      assertEquals(media.size.toLong(), completed.total)
+      assertTrue(updates.isNotEmpty())
+      assertTrue(File(cacheDir, "active.mp3").isFile)
+
+      source.close()
+      val reused = port.cacheProxyTarget("active.mp3") { updates += it }
+      assertEquals(ProxyCacheState.COMPLETE, reused.state)
+      assertEquals(media.size.toLong(), File(cacheDir, "active.mp3").length())
+    } finally {
+      source.close()
+    }
+  }
+
   private fun await(timeoutMs: Long, condition: () -> Boolean) {
     val deadline = System.currentTimeMillis() + timeoutMs
     while (System.currentTimeMillis() < deadline) {

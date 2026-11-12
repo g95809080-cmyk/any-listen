@@ -111,6 +111,15 @@ class HttpModule(private val registry: PortRegistry) : BridgeModule {
       null
     }
 
+    "cacheProxyTarget" -> {
+      val onProgress = ctx.callbackArg(1) ?: ctx.callbackAt(0)
+      Serialize.proxyCacheTask(
+        registry.http.cacheProxyTarget(args.str(0)) { status ->
+          ctx.emit(onProgress, Serialize.proxyCacheTask(status))
+        },
+      )
+    }
+
     else -> throw PortException(PortErrorCode.EUNSUPPORTED, "http.$method is not implemented")
   }
 }

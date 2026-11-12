@@ -11,7 +11,8 @@
 
 <p align="center">
   <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white">
-  <a href="https://github.com/g95809080-cmyk/any-listen/releases/latest"><img alt="Version" src="https://img.shields.io/badge/version-1.0.0--android.1-4F62D0"></a>
+  <a href="https://github.com/g95809080-cmyk/any-listen/releases/latest"><img alt="公开 Release" src="https://img.shields.io/badge/release-1.0.0--android.1-4F62D0"></a>
+  <a href="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml"><img alt="源码候选" src="https://img.shields.io/badge/candidate-1.0.0--android.3-3DDC84"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0%20%2B%20Additional%20Terms-6B7280"></a>
   <a href="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml"><img alt="Build Android APK" src="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml/badge.svg"></a>
 </p>
@@ -43,7 +44,7 @@ Any Listen 原本运行在桌面和 Web 服务端。本项目把同一套曲库�
 |---|---|
 | 本地曲库 | 导入本地音乐，管理歌单、收藏与试听列表 |
 | 播放 | 后台播放、系统媒体通知与锁屏控制、播放队列、歌词、倍速 |
-| 在线 | 聚合酷狗、酷我、网易、腾讯、咪咕的歌曲、歌单和排行榜；播放后可缓存到本地离线复听 |
+| 在线 | 聚合酷狗、酷我、网易、腾讯、咪咕的歌曲、歌单和排行榜；可长按单曲主动缓存或一键缓存当前歌单，完整落盘后标出“已缓存” |
 | 扩展 | 扩展商店、本地安装、LX Music 自定义源批量导入；最多同时启用 3 个源 |
 | 数据 | 歌单与设置一起备份、恢复 |
 | 外观 | 浅色、深色与多套主题；底部导航和安全区适配 |
@@ -54,14 +55,23 @@ Any Listen 原本运行在桌面和 Web 服务端。本项目把同一套曲库�
 
 需要 **Android 10（API 29）或更新版本**，目标设备为 `arm64-v8a`。
 
-仓库不提交二进制文件。推荐直接下载 [v1.0.0-android.1 Release](https://github.com/g95809080-cmyk/any-listen/releases/tag/v1.0.0-android.1)，附件包含：
+仓库不提交二进制文件。目前公开的 [v1.0.0-android.1 Release](https://github.com/g95809080-cmyk/any-listen/releases/tag/v1.0.0-android.1) 仍是 2026-11-06 的基线，**不包含当前源码中的主动单曲缓存、歌单缓存队列、列表“已缓存”标识、播放淡入淡出、媒体通知封面增强和 `android.2` 版 LX 加载器**。该 Release 包含：
 
 - `anylisten-android-1.0.0-android.1-debug.apk`
 - `lx-api-source-loader-android_0.1.7-android.1.alix`
 - `BUILD-INFO.txt`
 - `SHA256SUMS.txt`
 
-想获取后续构建，也可以在 GitHub Actions 下载最新产物：
+当前源码候选基线为 `1.0.0-android.3`，已完成本机 API 36 模拟器验收，但**尚未创建 Release**。本机 Debug 候选包为：
+
+| 项 | 值 |
+|---|---|
+| 路径 | `porting/android/app/build/outputs/apk/debug/app-debug.apk` |
+| 大小 | 20,536,199 B |
+| 构建时间 | 2026-11-11 18:27:05 +08:00 |
+| SHA-256 | `B6F4080A882CC0D3964384FB558996214FEB5B29F2B25B380E795B85D3979CE0` |
+
+要获取后续构建，可以在 GitHub Actions 下载最新产物：
 
 1. 打开 [Build Android APK](https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml)。
 2. 选择最近一次成功的运行。
@@ -71,10 +81,10 @@ Any Listen 原本运行在桌面和 Web 服务端。本项目把同一套曲库�
 
 | 类型 | 路径 | 说明 |
 |---|---|---|
-| Debug | `porting/android/app/build/outputs/apk/debug/app-debug.apk` | 日常安装和调试 |
-| Release | `porting/android/app/build/outputs/apk/release/app-release.apk` | R8 裁剪，当前仍使用调试签名，仅适合个人安装 |
+| Debug | `porting/android/app/build/outputs/apk/debug/app-debug.apk` | 当前候选；日常安装和调试 |
+| Release | `porting/android/app/build/outputs/apk/release/app-release.apk` | 运行 release 构建后生成；R8 裁剪，当前仍使用调试签名，仅适合个人安装 |
 
-安装包不包含任何第三方音源。首次启动请按提示授予音乐文件访问权限。
+本轮只重建和验收了 Debug APK，工作区当前没有 `app-release.apk`。安装包不包含任何第三方音源，首次启动请按提示授予音乐文件访问权限。
 
 ## 开始使用
 
@@ -95,13 +105,13 @@ pnpm install --frozen-lockfile
 pnpm build
 ```
 
-产物位于 `artifacts/lx-loader/*.alix`。然后：
+产物位于 `artifacts/lx-loader/*.alix`。当前候选包是 `lx-api-source-loader-android_0.1.7-android.2.alix`，194,364 B，SHA-256 `93C458ECB85CF19483F05705DF3CF57AB7D4ADC7DF62052D5158A236097E5D49`。然后：
 
 1. 进入「设置 → 扩展管理 → 本地安装」，选择生成的 `.alix`。
 2. 进入「设置 → 扩展设置 → LX Music API Source Loader (Android)」。
 3. 点击「导入本地自定义源」，多选或全选 `.js` 文件；结果页可以继续选择其他目录。
 4. 勾选需要启用的源。当前最多同时启用 3 个，启用顺序决定优先级。
-5. 保持「启用歌曲缓存」开启。歌曲播放时会后台保存完整音频，下载完成后可在断网状态复听。
+5. 保持「启用歌曲缓存」开启。歌曲播放时会后台保存完整音频；也可以长按在线歌曲选择「缓存到本地」，或在在线列表顶部选择「缓存歌单」。歌单队列最多同时下载两首，已缓存项会跳过，失败项会继续处理并可单独重试。
 6. 安装支持搜索的扩展后，在「在线」搜索并播放。
 
 导入成功只表示源文件已经保存，第三方音源本身能否播放取决于它的服务状态。缓存保存在应用私有目录，卸载应用会一并删除；首次播放需要等完整文件下载完成后才能离线复听。适配扩展使用独立 ID，不会覆盖官方扩展的数据；已有官方扩展的音源可以先导出，再导入这里。
@@ -174,15 +184,19 @@ Kotlin 宿主（文件系统 / HTTP / 媒体 / 通知 / 生命周期）
 
 ## 当前状态
 
-已在 Xiaomi 2211133C / Android 16（392×872 CSS 视口）和 API 36 模拟器完成真机验收，覆盖本地播放、在线搜索、媒体会话、备份恢复、扩展安装和 LX 自定义源批量导入。
+当前 `1.0.0-android.3` Debug 候选已在 API 36 模拟器和 Xiaomi 2211133C / Android 16 真机完成覆盖安装、首屏、在线搜索、主动单曲缓存和“已缓存”状态验收；模拟器还覆盖了双并发歌单队列、失败隔离与重试、断网冷启动播放、播放淡入淡出、后台播放、暂停后通知保留和媒体会话恢复。
 
 当前边界：
 
+- 公开 Release 仍是 `android.1`；`android.3` 只完成了本地 Debug 候选验收。
 - Android 10–15、横屏、平板、折叠屏和外接指针尚未系统覆盖。
 - 在线专辑、歌手搜索仍缺少对应的扩展接口。
 - 文件选择依赖系统文件路径和所有文件访问权限。
 - 第三方音源可能持续返回 400/503，或无法匹配播放地址；应用侧不能保证恢复。
 - 明文网络只放行白名单主机，音源升级后可能需要同步调整。
+- 歌曲必须下载完整后才能离线播放；断网冷启动时音频可用，但通知封面若没有本地缓存可能为空。
+- 歌单缓存只处理当前页面已经加载的歌曲，不会保存远程歌单结构；排队状态保存在当前进程内。
+- 本轮模拟器没有评估扬声器音质，只验证了播放状态、时长推进、缓存命中和系统控制。
 
 更完整的测试记录和已知问题见 [`docs/phase5-acceptance-report.md`](docs/phase5-acceptance-report.md)。
 
