@@ -523,7 +523,7 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
 
 ## 7. 已知限制
 
-1. **覆盖范围仍有限**。当前 `android.3` Debug 候选已在 API 36 模拟器完成主要路径验收；Xiaomi 2211133C / Android 16 的既有结论来自上一候选基线，尚需用新包复验。Android 10–15、横屏、平板、折叠屏、外接指针和长时间省电策略尚未系统覆盖。`app-release.apk` 的 R8 产物也未随本轮重建。
+1. **覆盖范围仍有限**。当前 `android.3` Debug 候选已在 API 36 模拟器完成主要路径验收，并在 Xiaomi 2211133C / Android 16 真机完成覆盖安装、首屏、在线搜索、长按主动缓存和“已缓存”状态验收。Android 10–15、横屏、平板、折叠屏、外接指针和长时间省电策略尚未系统覆盖。`app-release.apk` 的 R8 产物也未随本轮重建。
 2. **媒体栈选 `MediaSessionCompat` 而非 Media3**。Media3 `MediaSession` 必须绑定 `Player`，用 `SimpleBasePlayer` 伪装时单 item playlist 会导致通知栏「上一首/下一首」按钮不出现；而实际播放器是 Web Audio，没有 ExoPlayer 实例可绑。`MediaSessionCompat` 可以只声明 actions 不绑 player，正好匹配本架构。
 3. **`saveDocument` 已改成原生自写闭合，但仍有一个分支要调用方配合**。
    `DocumentPicker.saveDocument(suggestName, mime, source: SaveSource?)` 现在接收 `Bytes(ByteArray)` 或 `File(path)`，
