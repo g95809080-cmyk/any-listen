@@ -1894,8 +1894,22 @@ files/cache/proxy/cc157211f0a4218aa791d3dd498e607843338d97382edd22dc0ee8e7d33da2
 
 证据见 `artifacts/qa-screen-off-media-buttons-final-android4.txt`。
 
-### 34.5 真机状态与交付边界
+### 34.5 真机安装与数据迁移（2026-11-16）
 
-`android.4` 已在 API 36 模拟器完成修复后的覆盖安装、在线播放、后台曲终切歌、熄屏曲终切歌和熄屏媒体上一首/下一首验收。当前 Xiaomi 真机的无线调试端口已变化，重新尝试历史地址 `192.168.1.39:37927`、`192.168.1.39:42791` 和 `:5555` 均连接超时，`adb mdns services` 也没有发现设备，因此本轮不能声称 `android.4` 已安装或通过真机复验。
+2026-11-16 使用无线调试 `192.168.1.160:42981` 连接 Xiaomi 2211133C（Android 16 / API 36）。手机上原有 `1.0.0-android.3` 使用另一把 Debug 证书，直接覆盖返回 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。为避免升级丢失曲库，先停止应用并通过 `run-as` 将 `files/app`、`shared_prefs` 打包到临时文件 `artifacts/qa-phone-android3-userdata.tar`，备份为 38,039,040 B，SHA-256 为 `44DF56081E0B904224E1B2A8C530698D6774DCF113A317DA6C0715562CD796B9`；恢复并核对完成后已删除该临时备份。
 
-本轮结论覆盖 WebView 调度冻结这一条已定位路径；尚未覆盖 HyperOS 长时间冻结、厂商自启动限制、蓝牙耳机键、音质或不同 OEM 的省电策略。公开 Release 仍为 `v1.0.0-android.1`，`android.4` 是本地 Debug 候选，`app-release.apk` 未随本轮重建。
+备份完成后卸载旧包、安装最终 APK，再通过 `run-as` 原位恢复数据和文件属主。冷启动页面显示原有 12 个歌单、设置和当前队列，未重新导入曲库。设备内版本为 `versionCode=4` / `versionName=1.0.0-android.4`，`base.apk` SHA-256 为 `1b45eb7e0ea2ebc58b0576bedd25125afd0c19547b87940f699dd63b579157ef`，与本地文件一致。
+
+### 34.6 真机后台、熄屏与锁屏控制
+
+三组测试均使用最终安装包，等待期间不通过 CDP 唤醒 WebView：
+
+- **后台曲终**：从《半岛铁盒 / 周杰伦》结尾前 3 秒返回桌面，等待 10 秒后自动切到《分裂 / 周杰伦》，通知、封面和媒体会话同步更新并保持 `PLAYING(3)`；
+- **熄屏曲终**：切回前台后把《分裂》设到结尾前 3 秒并关闭屏幕，`mWakefulness=Dozing`；等待 10 秒后自动切到《花海 / 周杰伦》；
+- **熄屏媒体键**：屏幕保持 `Dozing`，`previous` 从《花海》切到《分裂》，随后 `next` 再切回《花海》；日志连续出现 `control → previoustrack/nexttrack → skipNext → playing`；
+- **回前台**：唤醒后页面仍是《花海》，HTMLAudioElement 已播放到 20 秒，没有补切或重复切歌；CDP 页面异常为 0，crash buffer 无记录；
+- 通知保留 `actions=3`、`MediaStyle` 封面为 132×132，媒体会话 `actions=823`。
+
+证据见 `artifacts/qa-xiaomi-background-auto-next-android4.txt`、`qa-xiaomi-screen-off-auto-next-android4.txt`、`qa-xiaomi-screen-off-media-buttons-android4.txt`、`qa-xiaomi-foreground-return-android4.txt` 和 `qa-xiaomi-android4-return.png`。
+
+本轮结论覆盖 WebView 调度冻结这一条已定位路径；HyperOS 长时间冻结、厂商自启动限制、蓝牙耳机键、音质或不同 OEM 的省电策略仍未系统覆盖。公开 Release 仍为 `v1.0.0-android.1`，`android.4` 是已安装到模拟器和真机的 Debug 候选，`app-release.apk` 未随本轮重建。
