@@ -1830,3 +1830,72 @@ files/cache/proxy/cc157211f0a4218aa791d3dd498e607843338d97382edd22dc0ee8e7d33da2
 - 本轮没有评估扬声器音质、蓝牙、耳机键或长时间厂商省电策略，只验证播放状态、时长推进、缓存命中和系统控制。
 - 24 个 LX 源已通过覆盖更新和重复导入稳定性回归；实际播放仍只抽测 `gdstudio音乐源`，不代表 24 个第三方源逐个可播。
 - 公开 Release 仍为 `v1.0.0-android.1`，不含主动缓存和歌单队列；`android.3` 是本地 Debug 候选，`app-release.apk` 尚未重建。
+
+---
+
+## 34. 熄屏/后台媒体任务修复（`android.4`，2026-11-15）
+
+真机 `android.3` 在屏幕关闭或应用切到后台后仍能继续播放当前歌曲，但歌曲结束后不会自动切下一首；锁屏媒体上一首、下一首也不会立即执行，恢复到应用前台时才补执行。该现象说明音频解码仍在继续，而 WebView 页面中的 `ended`、媒体键回调和扩展取源任务被系统延后。
+
+### 34.1 根因定位与最小修法
+
+现有链路没有丢失媒体键：`PlaybackService` 会把通知栏、锁屏和蓝牙媒体键转成 `MediaAction.NEXT_TRACK/PREVIOUS_TRACK`，再由 `MediaSessionPort` 通过桥推回 JS；前台模拟器实测可以正常走到 `nexttrack → skipNext`。问题集中在 Activity 不可见后，Chromium 渲染进程和页面计时器可能被 OEM 降级或冻结。
+
+本轮新增 `PlaybackWebView`，只调整 Android WebView 容器生命周期：
+
+- 播放 WebView 使用 `RENDERER_PRIORITY_IMPORTANT`，并设置 `waivedWhenNotVisible=false`；
+- WebView 窗口被 Activity 隐藏时，仍向 Chromium 内部报告可见，避免页面立即进入不可见的冻结路径；
+- Activity 的 `onPause/onStop` 和 WebView 脱离 Activity 的 `enterBackground()` 会幂等调用 `resumeTimers()` 与 `onResume()`；
+- 播放服务收到通知栏、锁屏或蓝牙媒体键后，先幂等唤醒当前播放 WebView，再向 JS 分发控制；
+- 保留原有 `onRenderProcessGone` 重建兜底和前台播放服务，不修改 `source/`、上游播放器或媒体按钮协议。
+
+### 34.2 候选产物与构建门禁
+
+| 项 | 值 |
+|---|---|
+| APK | `porting/android/app/build/outputs/apk/debug/app-debug.apk` |
+| 版本 | `versionCode=4` / `versionName=1.0.0-android.4` |
+| 大小 | 20,215,484 B |
+| 构建时间 | 2026-11-15 21:38:32 +08:00 |
+| SHA-256 | `1B45EB7E0EA2EBC58B0576BEDD25125AFD0C19547B87940F699DD63B579157EF` |
+| 模拟器 | `emulator-5554`，API 36，x86_64 |
+
+`adb install -r` 覆盖安装成功，模拟器内版本为 `versionCode=4` / `versionName=1.0.0-android.4`，设备 `base.apk` 的 SHA-256 为小写 `1b45eb7e0ea2ebc58b0576bedd25125afd0c19547b87940f699dd63b579157ef`，与本地文件一致。
+
+- `:app:assembleDebug -PskipWeb=true -PrequireWeb=true` 为 `BUILD SUCCESSFUL`。
+- `:bridge:testDebugUnitTest :core-ports:testDebugUnitTest` 在 ASCII 临时副本中为 `BUILD SUCCESSFUL`。
+- `check-webdist.mjs --assets --dist=../../artifacts/qa-build-android4-final-20261115` 为 `VERDICT: OK`；主入口为 `main.i5IjcQde.js`，5 个 worker 均存在，`index.html`、主入口和 `extension-preload` 的 dist/assets SHA-1 三项全等。
+
+### 34.3 后台与熄屏自动下一首
+
+前台基线中，将当前歌曲定位到结尾前 3 秒，歌曲结束后正常进入下一首。随后执行两类不可见场景：
+
+1. 返回桌面，确认 `topResumedActivity` 为系统 Launcher；
+2. 将播放位置设到结尾前 3 秒，关闭屏幕并确认 `mWakefulness=Asleep`；
+3. 屏幕保持关闭，等待 10 秒读取通知、媒体会话和 logcat，期间不通过 CDP 唤醒页面。
+
+结果：
+
+- 后台场景的通知从 `Hello / SHINee` 更新为 `Hello / Pop Smoke、A Boogie Wit da Hoodie`，媒体会话保持 `PLAYING(3)`；
+- 熄屏场景的 logcat 连续出现 `onEnded → skipNext → setMetadata → setPlaybackState(playing)`；
+- 熄屏后的通知和媒体会话均更新为 `Hello / ICE杨长青`，屏幕仍为 `Asleep`；
+- 唤醒并恢复前台后，`Hello / ICE杨长青` 继续播放到 17 秒，没有重复切歌，页面异常计数为 0。
+
+证据见 `artifacts/qa-background-auto-next-final-android4.txt`、`artifacts/qa-screen-off-auto-next-final-android4.txt` 和 `artifacts/qa-foreground-return-final-android4.txt`。
+
+### 34.4 熄屏媒体上一首/下一首
+
+屏幕保持 `Asleep` 时，通过系统媒体会话先后派发 `previous` 和 `next`：
+
+- `previous` 后媒体会话从 `Hello / ICE杨长青` 更新为 `Hello / Pop Smoke、A Boogie Wit da Hoodie`，logcat 出现 `control -> previoustrack → previoustrack`；
+- 随后 `next` 又更新回 `Hello / ICE杨长青`，logcat 出现 `control -> nexttrack → nexttrack → skipNext`；
+- 两次通知更新时 `mWakefulness` 始终为 `Asleep`，媒体会话均为 `PLAYING(3)`；
+- logcat 未出现 `FATAL EXCEPTION`、`ANR`、`JS_FreeRuntime` 或断言失败。
+
+证据见 `artifacts/qa-screen-off-media-buttons-final-android4.txt`。
+
+### 34.5 真机状态与交付边界
+
+`android.4` 已在 API 36 模拟器完成修复后的覆盖安装、在线播放、后台曲终切歌、熄屏曲终切歌和熄屏媒体上一首/下一首验收。当前 Xiaomi 真机的无线调试端口已变化，重新尝试历史地址 `192.168.1.39:37927`、`192.168.1.39:42791` 和 `:5555` 均连接超时，`adb mdns services` 也没有发现设备，因此本轮不能声称 `android.4` 已安装或通过真机复验。
+
+本轮结论覆盖 WebView 调度冻结这一条已定位路径；尚未覆盖 HyperOS 长时间冻结、厂商自启动限制、蓝牙耳机键、音质或不同 OEM 的省电策略。公开 Release 仍为 `v1.0.0-android.1`，`android.4` 是本地 Debug 候选，`app-release.apk` 未随本轮重建。

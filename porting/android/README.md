@@ -78,6 +78,7 @@ porting/android/
 | `AppGraph.kt` | 全局装配：token（`SecureRandom` 32 hex）、`PortRegistry`、`LocalHttpServer`、当前 Activity 弱引用 |
 | `AnyListenApp.kt` | 启动即开 HTTP 服务、装崩溃日志、后台预热 `fs.getEnv()` |
 | `MainActivity.kt` | 全屏 WebView + 桥注入 + 权限引导 + 返回键 |
+| `PlaybackWebView.kt` | 播放期保持重要渲染进程与隐藏窗口页面计时器，避免 OEM 在锁屏/后台冻结 JS 媒体任务 |
 | `PlaybackService.kt` | 前台服务（`mediaPlayback`）+ `MediaSessionCompat` + AudioFocus + `MediaStyle` 通知 |
 | `AppNotificationPort.kt` | 通知端口的 Activity 相关部分（Toast / AlertDialog） |
 | `SafPathResolver.kt` | SAF `tree/primary:Music` → 真实文件路径（仅 primary 卷，见「已知限制」） |
@@ -165,10 +166,11 @@ PowerShell 同参数：`./scripts/deploy.ps1 [-Build] [-Clear] [-Loose] [-NoLog]
 - **`--build` 是安全的路径**：它让**同一次** Gradle 调用里先跑完 `pnpm build:all`、再 `syncWebAssets`，
   天然不会踩到并发构建的坑（这也是当前 fullstack 还在改 UI 时推荐的装机方式）。
 
-> 当前设备状态：`1.0.0-android.3` Debug 候选已覆盖安装到 API 36 模拟器和
-> Xiaomi 2211133C / Android 16 真机。模拟器完成首屏、在线搜索与播放、Range 取流、
-> 主动单曲缓存、双并发歌单队列、失败隔离与重试、列表“已缓存”标识、断网冷启动、
-> 后台播放、通知与媒体控制验收；真机完成首屏、在线搜索、长按主动缓存和“已缓存”状态验收。
+> 当前设备状态：`1.0.0-android.4` Debug 候选已覆盖安装到 API 36 模拟器。
+> 模拟器完成首屏、在线搜索与播放、Range 取流、主动单曲缓存、双并发歌单队列、
+> 断网冷启动、后台与熄屏自动切歌、熄屏媒体上一首/下一首、通知和媒体控制验收。
+> `android.3` 曾在 Xiaomi 2211133C / Android 16 真机完成覆盖安装、在线搜索和主动缓存验收；
+> `android.4` 的真机无线调试端口当前不可达，不能把模拟器结果写成真机已复验。
 > `app-release.apk` 尚未随本轮重建。
 
 ### ⚠️ 不要和 `pnpm build:all` 并发构建
@@ -523,7 +525,7 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
 
 ## 7. 已知限制
 
-1. **覆盖范围仍有限**。当前 `android.3` Debug 候选已在 API 36 模拟器完成主要路径验收，并在 Xiaomi 2211133C / Android 16 真机完成覆盖安装、首屏、在线搜索、长按主动缓存和“已缓存”状态验收。Android 10–15、横屏、平板、折叠屏、外接指针和长时间省电策略尚未系统覆盖。`app-release.apk` 的 R8 产物也未随本轮重建。
+1. **覆盖范围仍有限**。当前 `android.4` Debug 候选已在 API 36 模拟器完成主要路径和熄屏媒体任务验收；`android.3` 曾在 Xiaomi 2211133C / Android 16 真机完成覆盖安装、首屏、在线搜索、长按主动缓存和“已缓存”状态验收。`android.4` 当前无线调试端口不可达，尚待真机复验。Android 10–15、横屏、平板、折叠屏、外接指针和长时间厂商省电策略尚未系统覆盖。`app-release.apk` 的 R8 产物也未随本轮重建。
 2. **媒体栈选 `MediaSessionCompat` 而非 Media3**。Media3 `MediaSession` 必须绑定 `Player`，用 `SimpleBasePlayer` 伪装时单 item playlist 会导致通知栏「上一首/下一首」按钮不出现；而实际播放器是 Web Audio，没有 ExoPlayer 实例可绑。`MediaSessionCompat` 可以只声明 actions 不绑 player，正好匹配本架构。
 3. **`saveDocument` 已改成原生自写闭合，但仍有一个分支要调用方配合**。
    `DocumentPicker.saveDocument(suggestName, mime, source: SaveSource?)` 现在接收 `Bytes(ByteArray)` 或 `File(path)`，
@@ -551,7 +553,7 @@ window.__anylisten_bridge_recv__(frameJson)   // 名字是硬约定，改了收�
    附带教训：`syncWebAssets` 把 `dist` 根**拍平**拷贝，JS 侧曾把旧产物改名成 `dist/spa.old.<ts>`，
    26 MB 垃圾进了 APK。现已按 `**/*.old.*`、`.trash/**` 挡住，并在构建日志里告警 `dist` 根的异常条目（见 §2）。
 8. **APK 里有约 4 MB 的 worker 重复 chunk**。`vite` 的每个 Web Worker 都是独立 rollup 构建，主图与 worker 图会各自 emit 一份内容相同的共享 chunk（`core-*`/`index-*`/各 parser）。Vite 正常行为，要瘦身得 JS 侧做「同内容去重 + 引用改写」；原生侧不改 hash 引用（改了必然 404）。
-9. **`backgroundAudio` 能力标记仍为 `"unverified"`**。API 36 模拟器和 Xiaomi Android 16 已完成短时后台播放与通知控制验证，但尚未覆盖各厂商长时间省电策略，因此不把标记提前改成 `true`。
+9. **`backgroundAudio` 能力标记仍为 `"unverified"`**。`android.4` 已在 API 36 模拟器验证后台、熄屏自动切歌和熄屏媒体上一首/下一首；`android.3` 曾在 Xiaomi Android 16 验证短时后台播放与通知控制。`android.4` 的真机复验和各厂商长时间省电策略仍未覆盖，因此不把标记提前改成 `true`。
 10. **`listTree` 大目录性能未压测**。已按「原生递归 + 500 条一批 + 逐批可取消」实现（1 万首歌不再 2 万次往返），但真实曲库规模下的耗时与内存占用尚无基准数据。
 11. **明文流量按扩展实际域名精确放行**。`usesCleartextTraffic="true"` 已删除，默认只放行
     `127.0.0.1` / `localhost` 和 `Online Metadata 0.4.8` 实际使用的 34 个主机名；其余域名一律禁明文

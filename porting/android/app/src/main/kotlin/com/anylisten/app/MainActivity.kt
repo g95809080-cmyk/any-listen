@@ -270,6 +270,7 @@ class MainActivity : ComponentActivity() {
   override fun onResume() {
     super.onResume()
     AppGraph.currentActivity = WeakReference(this)
+    keepPlaybackPageActive()
     // D-31：息屏/后台久了，渲染进程可能已被系统回收。**有些机型不会回调
     // onRenderProcessGone**（或在页面已经进了错误页之后才回调），回来时 WebView
     // 停在 `chrome-error://chromewebdata`。本地 HTTP 服务在 Kotlin 侧、还活着，
@@ -281,8 +282,18 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  override fun onPause() {
+    super.onPause()
+    if (AppGraph.playbackService != null) {
+      keepPlaybackPageActive()
+    }
+  }
+
   override fun onStop() {
     super.onStop()
+    if (AppGraph.playbackService != null) {
+      keepPlaybackPageActive()
+    }
     // onBackground 是 DB 强制 flush 的触发点（sql.js 无 WAL，靠这里收敛崩溃窗口）
     registry.lifecycle.dispatchBackground()
   }
@@ -325,6 +336,10 @@ class MainActivity : ComponentActivity() {
     // singleTask + 通知点击：回到前台即可，路由由 JS 处理
   }
 
+  fun keepPlaybackPageActive() {
+    (webView as? PlaybackWebView)?.keepPageActive()
+  }
+
   // ---------------------------------------------------------------- webview
 
   /**
@@ -336,7 +351,7 @@ class MainActivity : ComponentActivity() {
    * 避免"初建"和"重建"两套配置慢慢漂移 —— 这正是 D-31 修完之后最容易回归的地方。
    */
   private fun createWebView(): WebView {
-    val wv = WebView(runtime.contextWrapper)
+    val wv = PlaybackWebView(runtime.contextWrapper)
     configureWebView(wv)
     wv.addJavascriptInterface(runtime.bridge, JS_INTERFACE_NAME)
     runtime.installView(wv)

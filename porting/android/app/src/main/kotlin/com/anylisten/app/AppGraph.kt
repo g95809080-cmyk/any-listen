@@ -109,6 +109,12 @@ object AppGraph {
     runtime.enterBackground()
   }
 
+  /** 媒体控制进入桥之前先唤醒当前页面；与正常生命周期中的调用一样是幂等操作。 */
+  fun keepPlaybackPageActive() {
+    backgroundRuntime?.keepPageActive()
+    (currentActivity?.get() as? MainActivity)?.keepPlaybackPageActive()
+  }
+
   fun releaseBackgroundRuntime() {
     val runtime = backgroundRuntime ?: return
     backgroundRuntime = null

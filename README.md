@@ -12,7 +12,7 @@
 <p align="center">
   <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white">
   <a href="https://github.com/g95809080-cmyk/any-listen/releases/latest"><img alt="公开 Release" src="https://img.shields.io/badge/release-1.0.0--android.1-4F62D0"></a>
-  <a href="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml"><img alt="源码候选" src="https://img.shields.io/badge/candidate-1.0.0--android.3-3DDC84"></a>
+  <a href="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml"><img alt="源码候选" src="https://img.shields.io/badge/candidate-1.0.0--android.4-3DDC84"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0%20%2B%20Additional%20Terms-6B7280"></a>
   <a href="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml"><img alt="Build Android APK" src="https://github.com/g95809080-cmyk/any-listen/actions/workflows/build-android.yml/badge.svg"></a>
 </p>
@@ -55,21 +55,21 @@ Any Listen 原本运行在桌面和 Web 服务端。本项目把同一套曲库�
 
 需要 **Android 10（API 29）或更新版本**，目标设备为 `arm64-v8a`。
 
-仓库不提交二进制文件。目前公开的 [v1.0.0-android.1 Release](https://github.com/g95809080-cmyk/any-listen/releases/tag/v1.0.0-android.1) 仍是 2026-11-06 的基线，**不包含当前源码中的主动单曲缓存、歌单缓存队列、列表“已缓存”标识、播放淡入淡出、媒体通知封面增强和 `android.2` 版 LX 加载器**。该 Release 包含：
+仓库不提交二进制文件。目前公开的 [v1.0.0-android.1 Release](https://github.com/g95809080-cmyk/any-listen/releases/tag/v1.0.0-android.1) 仍是 2026-11-06 的基线，**不包含当前源码中的主动单曲缓存、歌单缓存队列、列表“已缓存”标识、播放淡入淡出、媒体通知封面增强、熄屏后台切歌修复和 `android.2` 版 LX 加载器**。该 Release 包含：
 
 - `anylisten-android-1.0.0-android.1-debug.apk`
 - `lx-api-source-loader-android_0.1.7-android.1.alix`
 - `BUILD-INFO.txt`
 - `SHA256SUMS.txt`
 
-当前源码候选基线为 `1.0.0-android.3`，已完成本机 API 36 模拟器验收，但**尚未创建 Release**。本机 Debug 候选包为：
+当前源码候选基线为 `1.0.0-android.4`，已完成本机 API 36 模拟器验收，但**尚未创建 Release**。本机 Debug 候选包为：
 
 | 项 | 值 |
 |---|---|
 | 路径 | `porting/android/app/build/outputs/apk/debug/app-debug.apk` |
-| 大小 | 20,536,199 B |
-| 构建时间 | 2026-11-11 18:27:05 +08:00 |
-| SHA-256 | `B6F4080A882CC0D3964384FB558996214FEB5B29F2B25B380E795B85D3979CE0` |
+| 大小 | 20,215,484 B |
+| 构建时间 | 2026-11-15 21:38:32 +08:00 |
+| SHA-256 | `1B45EB7E0EA2EBC58B0576BEDD25125AFD0C19547B87940F699DD63B579157EF` |
 
 要获取后续构建，可以在 GitHub Actions 下载最新产物：
 
@@ -184,11 +184,11 @@ Kotlin 宿主（文件系统 / HTTP / 媒体 / 通知 / 生命周期）
 
 ## 当前状态
 
-当前 `1.0.0-android.3` Debug 候选已在 API 36 模拟器和 Xiaomi 2211133C / Android 16 真机完成覆盖安装、首屏、在线搜索、主动单曲缓存和“已缓存”状态验收；模拟器还覆盖了双并发歌单队列、失败隔离与重试、断网冷启动播放、播放淡入淡出、后台播放、暂停后通知保留和媒体会话恢复。
+当前 `1.0.0-android.4` Debug 候选已在 API 36 模拟器完成覆盖安装、在线播放、熄屏与后台自动下一首、熄屏媒体上一首/下一首、通知保留和回到前台不重复切歌验收。`android.3` 另已在 Xiaomi 2211133C / Android 16 真机完成覆盖安装、首屏、在线搜索、主动单曲缓存和“已缓存”状态验收；本轮修复对应的真机无线调试端口当前不可达，因此 `android.4` 尚待真机复验。
 
 当前边界：
 
-- 公开 Release 仍是 `android.1`；`android.3` 只完成了本地 Debug 候选验收。
+- 公开 Release 仍是 `android.1`；`android.4` 只完成了本地 Debug 候选验收。
 - Android 10–15、横屏、平板、折叠屏和外接指针尚未系统覆盖。
 - 在线专辑、歌手搜索仍缺少对应的扩展接口。
 - 文件选择依赖系统文件路径和所有文件访问权限。
@@ -196,7 +196,7 @@ Kotlin 宿主（文件系统 / HTTP / 媒体 / 通知 / 生命周期）
 - 明文网络只放行白名单主机，音源升级后可能需要同步调整。
 - 歌曲必须下载完整后才能离线播放；断网冷启动时音频可用，但通知封面若没有本地缓存可能为空。
 - 歌单缓存只处理当前页面已经加载的歌曲，不会保存远程歌单结构；排队状态保存在当前进程内。
-- 本轮模拟器没有评估扬声器音质，只验证了播放状态、时长推进、缓存命中和系统控制。
+- 本轮模拟器没有评估扬声器音质，只验证了播放状态、时长推进、缓存命中、熄屏切歌和系统控制。
 
 更完整的测试记录和已知问题见 [`docs/phase5-acceptance-report.md`](docs/phase5-acceptance-report.md)。
 

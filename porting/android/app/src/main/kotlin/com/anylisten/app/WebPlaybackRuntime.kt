@@ -49,8 +49,13 @@ class WebPlaybackRuntime(context: Context) {
     webView = view
   }
 
+  fun keepPageActive() {
+    (webView as? PlaybackWebView)?.keepPageActive()
+  }
+
   fun enterBackground() {
     val view = webView ?: return
+    keepPageActive()
     ViewCompat.setOnApplyWindowInsetsListener(view, null)
     // 旧页面的客户端引用 Activity，后台改用不持有 Activity 的客户端。
     view.webViewClient = object : WebViewClient() {

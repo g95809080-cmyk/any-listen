@@ -185,6 +185,7 @@ class PlaybackService : android.app.Service() {
    */
   private fun control(action: MediaAction, value: Double? = null) {
     // 实际音频由 WebView 播放，Chromium 自己管理焦点；再申请一次会抢掉它的焦点。
+    AppGraph.keepPlaybackPageActive()
     registry.mediaSession.dispatchControl(action, value)
     Log.d(TAG, "control -> ${action.jsName} ${value ?: ""}")
   }
